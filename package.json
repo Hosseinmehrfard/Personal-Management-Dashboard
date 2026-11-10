@@ -1,0 +1,27 @@
+{
+  "name": "markaz-react-postgres-pwa",
+  "version": "5.0.0-security",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "dev": "vite --host 127.0.0.1",
+    "build": "vite build",
+    "start": "node server/index.js",
+    "test": "node --test tests/*.test.mjs",
+    "check": "node --check server/index.js && node --check server/db.js && node --check server/outbound.js && node --check server/rates.js && node --test tests/*.test.mjs",
+    "secrets:scan": "node scripts/scan-secrets.mjs"
+  },
+  "dependencies": {
+    "express": "4.22.3",
+    "pg": "8.23.1",
+    "react": "19.1.1",
+    "react-dom": "19.1.1",
+    "lucide-react": "0.468.0"
+  },
+  "devDependencies": {
+    "vite": "6.4.6"
+  }
+}

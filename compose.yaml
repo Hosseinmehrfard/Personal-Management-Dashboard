@@ -1,0 +1,59 @@
+name: markaz
+services:
+  db:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: markaz
+      POSTGRES_USER: markaz
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?required}
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL","pg_isready -U markaz -d markaz"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    security_opt: ["no-new-privileges:true"]
+  app:
+    build: .
+    restart: unless-stopped
+    init: true
+    environment:
+      DATABASE_URL: postgres://markaz:${POSTGRES_PASSWORD:?required}@db:5432/markaz
+      SETUP_TOKEN: ${SETUP_TOKEN:?required}
+      SESSION_SECRET: ${SESSION_SECRET:?required}
+      DATA_ENCRYPTION_KEY: ${DATA_ENCRYPTION_KEY:?required}
+      TRUST_PROXY: "1"
+      PUBLIC_ORIGIN: ${PUBLIC_ORIGIN:-}
+      ALLOWED_AGENT_HOSTS: ${ALLOWED_AGENT_HOSTS:-}
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:4173:4173"
+    security_opt: ["no-new-privileges:true"]
+    cap_drop: ["ALL"]
+    read_only: true
+    tmpfs: ["/tmp:rw,nosuid,noexec,size=16m"]
+  caddy:
+    image: caddy:2-alpine
+    security_opt: ['no-new-privileges:true']
+    cap_drop: ['ALL']
+    cap_add: ['NET_BIND_SERVICE']
+    profiles: ["https"]
+    restart: unless-stopped
+    depends_on:
+      app:
+        condition: service_healthy
+    ports: ["80:80","443:443","443:443/udp"]
+    environment:
+      DOMAIN: ${DOMAIN:?required}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+volumes:
+  pg_data:
+  caddy_data:
+  caddy_config:
