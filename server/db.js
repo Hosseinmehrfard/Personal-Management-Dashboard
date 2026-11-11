@@ -57,13 +57,51 @@ export async function migrate(){
   const hardened=await c.query('INSERT INTO schema_migrations(version) VALUES(2) ON CONFLICT DO NOTHING RETURNING version');
   if(hardened.rowCount)await c.query('DELETE FROM sessions');
   for(const [code,name,symbol,unit,navasan,price] of DEFAULT_CURRENCIES)await c.query(`INSERT INTO currencies(code,name,symbol,unit,navasan_code,manual_toman,is_default) VALUES($1,$2,$3,$4,$5,$6,true) ON CONFLICT(code) DO NOTHING`,[code,name,symbol,unit,navasan,price]);
-  for(const [code,title,en,slug] of TOPICS){await c.query(`INSERT INTO chapters(id,code,title,en) VALUES($1,$1,$2,$3) ON CONFLICT DO NOTHING`,[code,title,en]);await c.query(`INSERT INTO resources(id,chapter_id,title,url,status,checked_at) VALUES($1,$2,$3,$4,'pending',NULL) ON CONFLICT DO NOTHING`,['official-'+code,code,'راهنمای رسمی OWASP Top 10:2025','https://top10.owasp.org/2025/'+slug+'/']);}
+  // New installations start with an empty class catalogue. Existing OWASP data is preserved below.
   await c.query(`INSERT INTO provider_settings(name,config) VALUES('navasan','{"unit":"RIAL","refreshHours":8}'::jsonb) ON CONFLICT DO NOTHING`);
   await c.query(`INSERT INTO provider_settings(name,config) VALUES('arzdigital','{"enabled":false,"endpoint":"","unit":"TOMAN","refreshHours":8,"rootPath":"data","priceField":"price","codeField":"symbol","authStyle":"bearer"}'::jsonb) ON CONFLICT DO NOTHING`);
   await c.query('INSERT INTO schema_migrations(version) VALUES(3) ON CONFLICT DO NOTHING');
   await c.query(`INSERT INTO provider_settings(name,config) VALUES('rate_source','{"selected":"nerkhara","refreshMinutes":15}'::jsonb) ON CONFLICT DO NOTHING`);
   await c.query('INSERT INTO schema_migrations(version) VALUES(4) ON CONFLICT DO NOTHING');
+  // v6: additive migration; existing user records retain their original ownership.
+  await c.query(`ALTER TABLE users DROP CONSTRAINT IF EXISTS users_role_check`);
+  await c.query(`ALTER TABLE users ADD CONSTRAINT users_role_check CHECK(role IN ('admin','user'))`);
+  await c.query(`ALTER TABLE users ALTER COLUMN role SET DEFAULT 'user'`);
+  await c.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS active boolean NOT NULL DEFAULT true`);
+  await c.query(`CREATE TABLE IF NOT EXISTS classes(id text PRIMARY KEY,user_id text NOT NULL REFERENCES users(id) ON DELETE RESTRICT,title text NOT NULL,description text NOT NULL DEFAULT '',status text NOT NULL DEFAULT 'todo',notes text NOT NULL DEFAULT '',created_at timestamptz NOT NULL DEFAULT now(),updated_at timestamptz NOT NULL DEFAULT now())`);
+  for(const table of ['tasks','servers','transactions','installments','holdings','chapters','topics','resources','activities']){
+   await c.query(`ALTER TABLE "${table}" ADD COLUMN IF NOT EXISTS user_id text REFERENCES users(id) ON DELETE RESTRICT`);
+   await c.query(`UPDATE "${table}" SET user_id=(SELECT id FROM users WHERE role='admin' ORDER BY created_at LIMIT 1) WHERE user_id IS NULL AND EXISTS(SELECT 1 FROM users WHERE role='admin')`);
+   await c.query(`CREATE INDEX IF NOT EXISTS "idx_${table}_owner" ON "${table}"(user_id)`);
+  }
+  await c.query(`ALTER TABLE chapters ADD COLUMN IF NOT EXISTS class_id text REFERENCES classes(id) ON DELETE CASCADE`);
+  await c.query(`ALTER TABLE tasks ADD COLUMN IF NOT EXISTS class_id text REFERENCES classes(id) ON DELETE SET NULL`);
+  await c.query(`CREATE TABLE IF NOT EXISTS user_currency_preferences(user_id text NOT NULL REFERENCES users(id) ON DELETE CASCADE,code text NOT NULL REFERENCES currencies(code) ON DELETE CASCADE,visible boolean NOT NULL DEFAULT true,PRIMARY KEY(user_id,code))`);
+  await c.query(`CREATE INDEX IF NOT EXISTS idx_chapters_class ON chapters(class_id)`);
+  await c.query(`CREATE INDEX IF NOT EXISTS idx_tasks_class ON tasks(class_id)`);
+  await c.query(`INSERT INTO schema_migrations(version) VALUES(5) ON CONFLICT DO NOTHING`);
+  const initialOwner=(await c.query(`SELECT id FROM users WHERE role='admin' ORDER BY created_at LIMIT 1`)).rows[0]?.id;
+  if(initialOwner)await claimLegacy(c,initialOwner);
+  // Enforce non-null ownership whenever all historic records have been assigned.
+  for(const table of ['tasks','servers','transactions','installments','holdings','chapters','topics','resources','activities']){
+   const missing=await c.query(`SELECT 1 FROM "${table}" WHERE user_id IS NULL LIMIT 1`);
+   if(!missing.rowCount)await c.query(`ALTER TABLE "${table}" ALTER COLUMN user_id SET NOT NULL`);
+  }
   // No built-in administrator: the first account is created explicitly via /api/setup.
   // Existing users in an upgraded database are never changed or overwritten.
  });
+}
+
+// Invoked during initial-admin creation too (for databases installed before v6 setup).
+export async function claimLegacy(c,userId){
+ for(const table of ['tasks','servers','transactions','installments','holdings','chapters','topics','resources','activities']){
+  await c.query(`UPDATE "${table}" SET user_id=$1 WHERE user_id IS NULL`,[userId]);
+ }
+ const legacy=(await c.query('SELECT 1 FROM chapters WHERE user_id=$1 AND class_id IS NULL LIMIT 1',[userId])).rowCount;
+ if(legacy){
+  const id='legacy-owasp-'+userId;
+  await c.query(`INSERT INTO classes(id,user_id,title,description) VALUES($1,$2,'OWASP Top 10:2025','داده‌های کلاس OWASP از نسخه پیشین منتقل شده‌اند') ON CONFLICT DO NOTHING`,[id,userId]);
+  await c.query('UPDATE chapters SET class_id=$1 WHERE user_id=$2 AND class_id IS NULL',[id,userId]);
+  await c.query(`UPDATE tasks SET class_id=$1 WHERE user_id=$2 AND category='owasp' AND class_id IS NULL`,[id,userId]);
+ }
 }
