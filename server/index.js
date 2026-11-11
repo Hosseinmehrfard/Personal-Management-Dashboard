@@ -5,6 +5,8 @@ import {randomUUID} from 'node:crypto';
 import {query,tx,migrate,pool} from './db.js';
 import {encrypt,decrypt,encryptionReady,randomToken,digest,safeString,moneyNumber,safeUrl,passwordOK,hashPassword,secureEqual,normalizeAdminUsername,validAdminPassword} from './security.js';
 import {effectiveRates,refreshRates} from './rates.js';
+import {DEFAULT_ARZDIGITAL,validateArzdigitalConfig} from './arzdigital.js';
+import {validateRateSource,validateNerkharaId} from './nerkhara.js';
 import {agentAllowedHost,pinnedRequest,validateMetrics,safeDocHost} from './outbound.js';
 
 const app=express();
@@ -50,13 +52,13 @@ const TYPES={
  transactions:{table:'transactions',fields:['type','amount','date','category','description','installment_id'],shape:v=>({type:allow(v.type,['income','expense','installment'],'expense'),amount:moneyNumber(v.amount),date:dateOf(v.date)||fail('تاریخ ضروری است'),category:val(v.category,80)||'عمومی',description:val(v.description,220,true),installment_id:val(v.installment_id??v.installmentId,100)||null})},
  installments:{table:'installments',fields:['title','total','paid','monthly','due_date','notes'],shape:v=>{const total=moneyNumber(v.total),paid=numberOrZero(v.paid);if(paid>total)fail('مجموع پرداخت نباید از کل تعهد بیشتر باشد');return {title:val(v.title,180,true),total,paid,monthly:numberOrZero(v.monthly),due_date:dateOf(v.due_date??v.dueDate),notes:val(v.notes,8000)}}},
  holdings:{table:'holdings',fields:['asset','quantity','note'],shape:v=>({asset:val(v.asset,12,true).toUpperCase(),quantity:moneyNumber(v.quantity,true),note:val(v.note,1000)})},
- currencies:{table:'currencies',pk:'code',fields:['name','symbol','unit','navasan_code','manual_toman'],shape:v=>({name:val(v.name,100,true),symbol:val(v.symbol,16,true),unit:val(v.unit,50,true),navasan_code:val(v.navasan_code??v.navasanCode,40).toLowerCase()||null,manual_toman:numOrNull(v.manual_toman??v.manualToman)})},
+ currencies:{table:'currencies',pk:'code',fields:['name','symbol','unit','navasan_code','arzdigital_code','nerkhara_id','manual_toman'],shape:v=>({name:val(v.name,100,true),symbol:val(v.symbol,16,true),unit:val(v.unit,50,true),navasan_code:val(v.navasan_code??v.navasanCode,40).toLowerCase()||null,arzdigital_code:val(v.arzdigital_code??v.arzdigitalCode,32).toUpperCase()||null,nerkhara_id:validateNerkharaId(v.nerkhara_id??null),manual_toman:numOrNull(v.manual_toman??v.manualToman)})},
  chapters:{table:'chapters',fields:['code','title','en','description','status','verified','notes'],shape:v=>({code:val(v.code,35)||'CUSTOM',title:val(v.title,200,true),en:val(v.en,230),description:val(v.description,8000),status:allow(v.status,['todo','progress','review','done'],'todo'),verified:Boolean(v.verified),notes:val(v.notes,12000)})},
  topics:{table:'topics',fields:['chapter_id','title','status','notes','verified'],shape:v=>({chapter_id:idOf(v.chapter_id??v.chapterId),title:val(v.title,250,true),status:allow(v.status,['todo','progress','review','done'],'todo'),notes:val(v.notes,8000),verified:Boolean(v.verified)})},
  resources:{table:'resources',fields:['chapter_id','title','url','status','notes','checked_at'],shape:v=>({chapter_id:idOf(v.chapter_id??v.chapterId),title:val(v.title,250,true),url:safeUrl(val(v.url,2048,true)),status:allow(v.status,['pending','verified','broken','review'],'pending'),notes:val(v.notes,5000),checked_at:timestampOf(v.checked_at??v.checkedAt)})}
 };
 async function putRecord(client,kind,key,input){const info=TYPES[kind];if(!info)fail('بخش نامعتبر');const pk=info.pk||'id',data=info.shape(input),fields=info.fields;
- if(kind==='currencies'){if(data.navasan_code&&!/^[a-z0-9_]{1,40}$/.test(data.navasan_code))fail('کد نماد API نامعتبر است');if(key==='TOMAN'){data.manual_toman=1;data.navasan_code=null;}}
+ if(kind==='currencies'){if(data.navasan_code&&!/^[a-z0-9_]{1,40}$/.test(data.navasan_code))fail('کد نماد API نامعتبر است');if(data.arzdigital_code&&!/^[A-Z0-9_-]{1,32}$/.test(data.arzdigital_code))fail('کد نماد ارزدیجیتال نامعتبر است');if(key==='TOMAN'){data.manual_toman=1;data.navasan_code=null;data.arzdigital_code=null;data.nerkhara_id=null;}}
  if(kind==='currencies'&&!/^[A-Z0-9]{2,12}$/.test(key))fail('کد ارز نامعتبر است');
  const vals=[key,...fields.map(f=>data[f])],columns=[pk,...fields];const update=fields.map((f,i)=>`"${f}"=EXCLUDED."${f}"`).join(',');
  const oldManual=kind==='currencies'?(await client.query('SELECT manual_toman FROM currencies WHERE code=$1',[key])).rows[0]?.manual_toman:null;
@@ -193,6 +195,30 @@ app.post('/api/servers/:id/poll',wrap(async(req,res)=>{const id=idOf(req.params.
 app.get('/api/settings/provider',wrap(async(req,res)=>{const x=(await query("SELECT encrypted_key,config FROM provider_settings WHERE name='navasan'")).rows[0];res.json({configured:Boolean(x?.encrypted_key||process.env.NAVASAN_API_KEY),unit:x?.config?.unit||'RIAL',refreshHours:x?.config?.refreshHours||8})}));
 app.put('/api/settings/provider',wrap(async(req,res)=>{const b=req.body||{},unit=allow(b.unit,['RIAL','TOMAN'],'RIAL'),refreshHours=Number(b.refreshHours);if(!Number.isInteger(refreshHours)||refreshHours<1||refreshHours>168)fail('فاصله به‌روزرسانی باید ۱ تا ۱۶۸ ساعت باشد');const key=b.key?val(b.key,256,true):null;
  await tx(async c=>{const previous=(await c.query("SELECT config FROM provider_settings WHERE name='navasan'")).rows[0];await c.query("UPDATE provider_settings SET config=$1,encrypted_key=CASE WHEN $2::boolean THEN NULL WHEN $3::text IS NOT NULL THEN $3 ELSE encrypted_key END,updated_at=now() WHERE name='navasan'",[{unit,refreshHours},b.clearKey===true,key?encrypt(key):null]);if(previous?.config?.unit!==unit||key||b.clearKey)await c.query("DELETE FROM exchange_rates WHERE source='نوسان'");});res.json({ok:true})}));
+// ArzDigital official API: activate only after receiving authorized credentials/docs.
+app.get('/api/settings/arzdigital',wrap(async(req,res)=>{
+ const x=(await query("SELECT encrypted_key,config FROM provider_settings WHERE name='arzdigital'")).rows[0];
+ res.json({...DEFAULT_ARZDIGITAL,...x?.config,configured:Boolean(x?.encrypted_key||process.env.ARZDIGITAL_API_KEY)});
+}));
+app.put('/api/settings/arzdigital',wrap(async(req,res)=>{
+ const cfg=validateArzdigitalConfig(req.body||{});
+ const key=req.body?.key?val(req.body.key,512,true):null;
+ if(key&&(key.includes('\n')||key.includes('\r')))fail('کلید API نامعتبر است');
+ await tx(async c=>{
+  await c.query(`INSERT INTO provider_settings(name,config,encrypted_key,updated_at) VALUES('arzdigital',$1,$2,now()) ON CONFLICT(name) DO UPDATE SET config=$1,encrypted_key=CASE WHEN $3::boolean THEN NULL WHEN $2::text IS NOT NULL THEN $2 ELSE provider_settings.encrypted_key END,updated_at=now()`,[cfg,key?encrypt(key):null,req.body?.clearKey===true]);
+ });
+ res.json({ok:true});
+}));
+// Selected rate provider: explicit choice, no silent fallback or exposed API credentials.
+app.get('/api/settings/rate-source',wrap(async(req,res)=>{
+ const x=(await query("SELECT config FROM provider_settings WHERE name='rate_source'")).rows[0];
+ res.json(validateRateSource(x?.config||{}));
+}));
+app.put('/api/settings/rate-source',wrap(async(req,res)=>{
+ const config=validateRateSource(req.body||{});
+ await query("INSERT INTO provider_settings(name,config,updated_at) VALUES('rate_source',$1,now()) ON CONFLICT(name) DO UPDATE SET config=EXCLUDED.config,updated_at=now()",[config]);
+ res.json({ok:true,...config});
+}));
 app.get('/api/rates',wrap(async(req,res)=>res.json(await effectiveRates())));
 app.post('/api/rates/refresh',wrap(async(req,res)=>{const result=await refreshRates(true);res.json({...result,rates:await effectiveRates()})}));
 app.get('/api/links/check',wrap(async(req,res)=>{const target=new URL(safeUrl(String(req.query.url||'')));const host=target.hostname.toLowerCase();if(!safeDocHost(host))fail('بررسی خودکار فقط برای دامنه‌های مستندات شناخته‌شده مجاز است');const r=await pinnedRequest(target.href,{method:'HEAD',maxBytes:0,timeout:6500,publicOnly:true});res.json({ok:r.status>=200&&r.status<400,status:r.status,checkedAt:new Date().toISOString()})}));
@@ -252,6 +278,6 @@ const dist=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'../dist');
 app.use(express.static(dist,{index:false,maxAge:'1h',setHeaders:(res,file)=>{if(file.endsWith('.html')||file.endsWith('sw.js'))res.setHeader('Cache-Control','no-cache')}}));
 app.get('*',(req,res)=>res.sendFile(path.join(dist,'index.html')));
 app.use((err,req,res,next)=>responseError(res,err));
-async function start(){if(!encryptionReady())throw Error('DATA_ENCRYPTION_KEY باید ۶۴ رقم HEX باشد');if(String(process.env.SESSION_SECRET||'').length<32)throw Error('SESSION_SECRET باید حداقل ۳۲ نویسه باشد');await migrate();const port=Number(process.env.PORT||4173),host=process.env.HOST||'0.0.0.0';app.listen(port,host,()=>console.log(`Markaz React + PostgreSQL on ${host}:${port}`));setInterval(()=>refreshRates(false).catch(e=>console.error('rate update failed:',e.message)),30*60*1000).unref();setInterval(()=>Promise.all([query('DELETE FROM sessions WHERE expires_at<now()'),query('DELETE FROM auth_attempts WHERE window_end<now()')]).catch(()=>{}),3600000).unref()}
+async function start(){if(!encryptionReady())throw Error('DATA_ENCRYPTION_KEY باید ۶۴ رقم HEX باشد');if(String(process.env.SESSION_SECRET||'').length<32)throw Error('SESSION_SECRET باید حداقل ۳۲ نویسه باشد');await migrate();const port=Number(process.env.PORT||4173),host=process.env.HOST||'0.0.0.0';app.listen(port,host,()=>console.log(`Markaz React + PostgreSQL on ${host}:${port}`));setTimeout(()=>refreshRates(false).catch(e=>console.error('initial rates update failed:',e.message)),3000).unref();setInterval(()=>refreshRates(false).catch(e=>console.error('rate update failed:',e.message)),5*60*1000).unref();setInterval(()=>Promise.all([query('DELETE FROM sessions WHERE expires_at<now()'),query('DELETE FROM auth_attempts WHERE window_end<now()')]).catch(()=>{}),3600000).unref()}
 if(process.env.NODE_ENV!=='test')start().catch(e=>{console.error('Startup failure:',e.code||e.name||'Invalid configuration');process.exit(1)});
 export {app,TYPES,putRecord};

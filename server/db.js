@@ -37,6 +37,8 @@ export async function migrate(){
   await c.query(`CREATE TABLE IF NOT EXISTS transactions(id text PRIMARY KEY,type text NOT NULL CHECK(type IN ('income','expense','installment')),amount numeric(22,2) NOT NULL CHECK(amount>0),date date NOT NULL,category text NOT NULL DEFAULT 'عمومی',description text NOT NULL,installment_id text,created_at timestamptz DEFAULT now())`);
   await c.query(`CREATE TABLE IF NOT EXISTS installments(id text PRIMARY KEY,title text NOT NULL,total numeric(22,2) NOT NULL CHECK(total>=0),paid numeric(22,2) NOT NULL DEFAULT 0 CHECK(paid>=0),monthly numeric(22,2) NOT NULL DEFAULT 0 CHECK(monthly>=0),due_date date,notes text NOT NULL DEFAULT '',created_at timestamptz DEFAULT now())`);
   await c.query(`CREATE TABLE IF NOT EXISTS currencies(code text PRIMARY KEY,name text NOT NULL,symbol text NOT NULL,unit text NOT NULL,navasan_code text,manual_toman numeric(24,4),is_default boolean NOT NULL DEFAULT false,created_at timestamptz DEFAULT now(),CHECK(manual_toman IS NULL OR manual_toman>0))`);
+  await c.query(`ALTER TABLE currencies ADD COLUMN IF NOT EXISTS arzdigital_code text`);
+  await c.query(`ALTER TABLE currencies ADD COLUMN IF NOT EXISTS nerkhara_id text`);
   await c.query(`CREATE TABLE IF NOT EXISTS holdings(id text PRIMARY KEY,asset text NOT NULL REFERENCES currencies(code) ON UPDATE CASCADE ON DELETE RESTRICT,quantity numeric(28,8) NOT NULL CHECK(quantity>=0),note text NOT NULL DEFAULT '',created_at timestamptz DEFAULT now())`);
   await c.query(`CREATE TABLE IF NOT EXISTS chapters(id text PRIMARY KEY,code text NOT NULL,title text NOT NULL,en text NOT NULL DEFAULT '',description text NOT NULL DEFAULT '',status text NOT NULL DEFAULT 'todo',verified boolean NOT NULL DEFAULT false,notes text NOT NULL DEFAULT '',created_at timestamptz DEFAULT now())`);
   await c.query(`CREATE TABLE IF NOT EXISTS topics(id text PRIMARY KEY,chapter_id text NOT NULL REFERENCES chapters(id) ON DELETE CASCADE,title text NOT NULL,status text NOT NULL DEFAULT 'todo',notes text NOT NULL DEFAULT '',verified boolean NOT NULL DEFAULT false,created_at timestamptz DEFAULT now())`);
@@ -57,6 +59,10 @@ export async function migrate(){
   for(const [code,name,symbol,unit,navasan,price] of DEFAULT_CURRENCIES)await c.query(`INSERT INTO currencies(code,name,symbol,unit,navasan_code,manual_toman,is_default) VALUES($1,$2,$3,$4,$5,$6,true) ON CONFLICT(code) DO NOTHING`,[code,name,symbol,unit,navasan,price]);
   for(const [code,title,en,slug] of TOPICS){await c.query(`INSERT INTO chapters(id,code,title,en) VALUES($1,$1,$2,$3) ON CONFLICT DO NOTHING`,[code,title,en]);await c.query(`INSERT INTO resources(id,chapter_id,title,url,status,checked_at) VALUES($1,$2,$3,$4,'pending',NULL) ON CONFLICT DO NOTHING`,['official-'+code,code,'راهنمای رسمی OWASP Top 10:2025','https://top10.owasp.org/2025/'+slug+'/']);}
   await c.query(`INSERT INTO provider_settings(name,config) VALUES('navasan','{"unit":"RIAL","refreshHours":8}'::jsonb) ON CONFLICT DO NOTHING`);
+  await c.query(`INSERT INTO provider_settings(name,config) VALUES('arzdigital','{"enabled":false,"endpoint":"","unit":"TOMAN","refreshHours":8,"rootPath":"data","priceField":"price","codeField":"symbol","authStyle":"bearer"}'::jsonb) ON CONFLICT DO NOTHING`);
+  await c.query('INSERT INTO schema_migrations(version) VALUES(3) ON CONFLICT DO NOTHING');
+  await c.query(`INSERT INTO provider_settings(name,config) VALUES('rate_source','{"selected":"nerkhara","refreshMinutes":15}'::jsonb) ON CONFLICT DO NOTHING`);
+  await c.query('INSERT INTO schema_migrations(version) VALUES(4) ON CONFLICT DO NOTHING');
   // No built-in administrator: the first account is created explicitly via /api/setup.
   // Existing users in an upgraded database are never changed or overwritten.
  });

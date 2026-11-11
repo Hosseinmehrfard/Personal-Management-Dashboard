@@ -1,6 +1,6 @@
 {
   "name": "markaz-react-postgres-pwa",
-  "version": "5.0.0-security",
+  "version": "5.2.0-nerkhara-connector",
   "private": true,
   "type": "module",
   "engines": {
@@ -11,7 +11,7 @@
     "build": "vite build",
     "start": "node server/index.js",
     "test": "node --test tests/*.test.mjs",
-    "check": "node --check server/index.js && node --check server/db.js && node --check server/outbound.js && node --check server/rates.js && node --test tests/*.test.mjs",
+    "check": "node --check server/index.js && node --check server/db.js && node --check server/outbound.js && node --check server/rates.js && node --check server/arzdigital.js && node --check server/nerkhara.js && node --test tests/*.test.mjs",
     "secrets:scan": "node scripts/scan-secrets.mjs"
   },
   "dependencies": {
