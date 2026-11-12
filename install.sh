@@ -67,6 +67,10 @@ if [[ -n "$DOMAIN_VAL" && "$DOMAIN_VAL" != dashboard.example.com ]];then
  else printf 'PUBLIC_ORIGIN=https://%s\n' "$DOMAIN_VAL" >> .env;fi
  chmod 600 .env
 fi
+if [[ "$BASE" == /opt/markaz && -f /usr/local/sbin/personal-dashboard-update ]]; then
+ install -o root -g root -m 0750 "$BASE/scripts/server-update.sh" /usr/local/sbin/personal-dashboard-update
+fi
+export DASHBOARD_REVISION="$(git rev-parse HEAD)"
 if [[ -n "$DOMAIN_NEW" || ( -n "$DOMAIN_VAL" && "$DOMAIN_VAL" != dashboard.example.com ) ]];then
  docker compose --profile https up -d --build --remove-orphans
  echo "MARKAZ_URL=https://$DOMAIN_VAL"

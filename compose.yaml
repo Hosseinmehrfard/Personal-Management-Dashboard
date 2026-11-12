@@ -16,7 +16,10 @@ services:
       retries: 10
     security_opt: ["no-new-privileges:true"]
   app:
-    build: .
+    build:
+      context: .
+      args:
+        DASHBOARD_REVISION: ${DASHBOARD_REVISION:-}
     restart: unless-stopped
     init: true
     environment:

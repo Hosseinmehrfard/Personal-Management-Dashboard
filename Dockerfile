@@ -10,7 +10,8 @@ COPY tests ./tests
 RUN npm run check && npm run build
 
 FROM node:22-alpine
-ENV NODE_ENV=production PORT=4173 HOST=0.0.0.0
+ARG DASHBOARD_REVISION=
+ENV NODE_ENV=production PORT=4173 HOST=0.0.0.0 DASHBOARD_REVISION=${DASHBOARD_REVISION}
 WORKDIR /app
 COPY --from=build /app/package.json /app/package-lock.json ./
 RUN npm ci --omit=dev --no-audit --no-fund && npm cache clean --force

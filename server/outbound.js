@@ -29,10 +29,11 @@ export async function pinnedRequest(url,{method='GET',headers={},maxBytes=65536,
  if(!records.length||records.some(r=>!isIP(r.address)||publicOnly&&!isPublicIP(r.address)))throw Object.assign(new Error('آدرس شبکه مجاز نیست'),{status:403});
  const record=records[0];
  return await new Promise((resolve,reject)=>{
-  const req=https.request(u,{method,headers:{'Accept':'application/json',...headers},timeout,signal:AbortSignal.timeout(timeout),lookup:(_host,_opts,cb)=>cb(null,record.address,record.family),maxHeaderSize:8192,agent:false},res=>{
+  const req=https.request(u,{method,headers:{'Accept':'application/json',...headers},timeout,signal:AbortSignal.timeout(timeout),lookup:(_host,_opts,cb)=>cb(null,record.address,record.family),maxHeaderSize:8192,autoSelectFamily:false,agent:false},res=>{
    let length=0;const chunks=[];
    if([301,302,303,307,308].includes(res.statusCode)){res.resume();reject(Object.assign(new Error('تغییر مسیر شبکه مجاز نیست'),{status:502}));return;}
    res.on('data',chunk=>{length+=chunk.length;if(length>maxBytes){req.destroy(new Error('پاسخ سرویس بیش‌ازحد بزرگ است'));return;}chunks.push(chunk)});
+   res.on('error',reject);
    res.on('end',()=>resolve({status:res.statusCode,body:Buffer.concat(chunks).toString('utf8')}));
   });
   req.on('timeout',()=>req.destroy(new Error('زمان اتصال پایان یافت')));

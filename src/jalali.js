@@ -29,3 +29,9 @@ export function daysInMonth(year,month){if(month<1||month>12)return 0;return mon
 export const weekPosition=iso=>(new Date(iso+'T12:00:00Z').getUTCDay()+1)%7;
 export function changeMonth(year,month,delta){const m=(year*12+month-1)+delta;return {year:Math.floor(m/12),month:((m%12)+12)%12+1}}
 export function formatJalali(iso){const p=persianParts(iso);return p?`${p.year}/${String(p.month).padStart(2,'0')}/${String(p.day).padStart(2,'0')}`.replace(/[0-9]/g,d=>'۰۱۲۳۴۵۶۷۸۹'[Number(d)]):'انتخاب تاریخ شمسی'}
+
+const tehranDate=new Intl.DateTimeFormat('en-CA',{calendar:'gregory',timeZone:'Asia/Tehran',year:'numeric',month:'2-digit',day:'2-digit'});
+export function todayInTehran(date=new Date()){
+ const fields=Object.fromEntries(tehranDate.formatToParts(date).map(({type,value})=>[type,value]));
+ return `${fields.year}-${fields.month}-${fields.day}`;
+}

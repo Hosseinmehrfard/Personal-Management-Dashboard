@@ -1,8 +1,9 @@
 import React,{useEffect,useState} from 'react';
 import {Plus,Pencil,Trash2,Users,ShieldCheck,CalendarDays,ChevronRight,ChevronLeft,RefreshCw,BookOpen,Link2,ListTodo,Check,Eye,EyeOff,Save,KeyRound,CloudDownload,ExternalLink,Coins,ArrowLeft} from 'lucide-react';
-import {persianParts,toIsoJalali,daysInMonth,weekPosition,changeMonth,monthNames,weekdays,formatJalali} from './jalali.js';
+import {persianParts,toIsoJalali,daysInMonth,weekPosition,changeMonth,monthNames,weekdays,formatJalali,todayInTehran} from './jalali.js';
 
 const format=new Intl.NumberFormat('fa-IR',{maximumFractionDigits:2});
+const formatYear=new Intl.NumberFormat('fa-IR',{useGrouping:false});
 const formatMoney=n=>new Intl.NumberFormat('fa-IR',{maximumFractionDigits:0}).format(Number(n)||0)+' تومان';
 function Box({title,aside,children}){return <section className="panel"><div className="panel-head"><h2>{title}</h2>{aside}</div>{children}</section>}
 function Notice({children}){return <p className="helper-text">{children}</p>}
@@ -12,26 +13,26 @@ export function JalaliCalendarGrid({year,month,selected,onSelect,items=[]}){
  const cells=[...Array(weekPosition(start)).fill(null),...Array.from({length:last},(_,i)=>i+1)];
  return <div className="jalali-grid">{weekdays.map(d=><div className="jalali-week" key={d}>{d}</div>)}{cells.map((d,i)=>{
   const iso=d?toIsoJalali(year,month,d):null,events=d?items.filter(i=>i.date===iso):[];
-  return <button type="button" key={i} disabled={!d} className={'jalali-day '+(iso===selected?'picked ':'')+(iso===new Date().toISOString().slice(0,10)?'today ':'')} onClick={()=>d&&onSelect?.(iso)}>
+  return <button type="button" key={i} disabled={!d} className={'jalali-day '+(iso===selected?'picked ':'')+(iso===todayInTehran()?'today ':'')} onClick={()=>d&&onSelect?.(iso)}>
    {d?<><span>{format.format(d)}</span>{events.length>0&&<span className="jalali-events">{format.format(events.length)} رویداد</span>}</>:null}
   </button>})}</div>;
 }
 export function JalaliDateInput({value,onChange,required}){
- const initial=persianParts(value)||persianParts(new Date().toISOString().slice(0,10));
+ const initial=persianParts(value)||persianParts(todayInTehran());
  const [shown,setShown]=useState(false),[month,setMonth]=useState({year:initial.year,month:initial.month});
  useEffect(()=>{if(value){const p=persianParts(value);if(p)setMonth({year:p.year,month:p.month})}},[value]);
  const move=n=>setMonth(old=>changeMonth(old.year,old.month,n));
- return <div className="jalali-input"><button type="button" className="jalali-trigger" onClick={()=>setShown(x=>!x)}><CalendarDays size={16}/>{formatJalali(value)}</button><input type="hidden" value={value||''} readOnly/>{shown&&<div className="jalali-popup"><div className="jalali-head"><button type="button" onClick={()=>move(-1)} aria-label="ماه قبل"><ChevronRight size={18}/></button><strong>{monthNames[month.month-1]} {format.format(month.year)}</strong><button type="button" onClick={()=>move(1)} aria-label="ماه بعد"><ChevronLeft size={18}/></button></div><JalaliCalendarGrid {...month} selected={value} onSelect={iso=>{onChange(iso);setShown(false)}}/><div className="jalali-pop-actions"><button type="button" className="button small" onClick={()=>{onChange(new Date().toISOString().slice(0,10));setShown(false)}}>امروز</button><button type="button" className="button small" onClick={()=>{onChange('');setShown(false)}}>پاک‌کردن</button><button type="button" className="button small" onClick={()=>setShown(false)}>بستن</button></div></div>}</div>;
+ return <div className="jalali-input"><button type="button" className="jalali-trigger" onClick={()=>setShown(x=>!x)}><CalendarDays size={16}/>{formatJalali(value)}</button><input type="hidden" value={value||''} readOnly/>{shown&&<div className="jalali-popup"><div className="jalali-head"><button type="button" onClick={()=>move(-1)} aria-label="ماه قبل"><ChevronRight size={18}/></button><strong>{monthNames[month.month-1]} {formatYear.format(month.year)}</strong><button type="button" onClick={()=>move(1)} aria-label="ماه بعد"><ChevronLeft size={18}/></button></div><JalaliCalendarGrid {...month} selected={value} onSelect={iso=>{onChange(iso);setShown(false)}}/><div className="jalali-pop-actions"><button type="button" className="button small" onClick={()=>{onChange(todayInTehran());setShown(false)}}>امروز</button><button type="button" className="button small" onClick={()=>{onChange('');setShown(false)}}>پاک‌کردن</button><button type="button" className="button small" onClick={()=>setShown(false)}>بستن</button></div></div>}</div>;
 }
 export function CalendarPage({data,onTask}){
- const now=persianParts(new Date().toISOString().slice(0,10));const [month,setMonth]=useState({year:now.year,month:now.month});const [day,setDay]=useState(new Date().toISOString().slice(0,10));
+ const now=persianParts(todayInTehran());const [month,setMonth]=useState({year:now.year,month:now.month});const [day,setDay]=useState(todayInTehran());
  const events=[...data.tasks.filter(x=>x.due_date).map(x=>({date:String(x.due_date).slice(0,10),name:x.title,kind:'task'})),...data.installments.filter(x=>x.due_date).map(x=>({date:String(x.due_date).slice(0,10),name:x.title,kind:'installment'}))];
- return <div className="calendar-page"><Box title="تقویم شمسی و برنامه‌ها" aside={<div className="jalali-head"><button className="icon-button" onClick={()=>setMonth(v=>changeMonth(v.year,v.month,-1))}><ChevronRight size={18}/></button><strong>{monthNames[month.month-1]} {format.format(month.year)}</strong><button className="icon-button" onClick={()=>setMonth(v=>changeMonth(v.year,v.month,1))}><ChevronLeft size={18}/></button></div>}><JalaliCalendarGrid {...month} selected={day} onSelect={setDay} items={events}/><Notice>تاریخ‌ها به شمسی نمایش داده می‌شوند؛ در پایگاه‌داده با قالب استاندارد ISO ذخیره می‌مانند.</Notice></Box><Box title={'برنامه‌های '+formatJalali(day)}>{events.filter(x=>x.date===day).map((e,i)=><div className="line-item" key={i}><CalendarDays size={17}/><div className="grow"><strong>{e.name}</strong><small>{e.kind==='task'?'وظیفه':'موعد قسط'}</small></div></div>)}{!events.some(x=>x.date===day)&&<div className="empty">رویدادی در این روز ثبت نشده است.</div>}<button className="primary small" onClick={()=>onTask(day)}><Plus size={16}/> افزودن کار با این موعد</button></Box></div>;
+ return <div className="calendar-page"><Box title="تقویم شمسی و برنامه‌ها" aside={<div className="jalali-head"><button className="icon-button" aria-label="ماه قبل" onClick={()=>setMonth(v=>changeMonth(v.year,v.month,-1))}><ChevronRight size={18}/></button><strong>{monthNames[month.month-1]} {formatYear.format(month.year)}</strong><button className="icon-button" aria-label="ماه بعد" onClick={()=>setMonth(v=>changeMonth(v.year,v.month,1))}><ChevronLeft size={18}/></button></div>}><JalaliCalendarGrid {...month} selected={day} onSelect={setDay} items={events}/></Box><Box title={'برنامه‌های '+formatJalali(day)}>{events.filter(x=>x.date===day).map((e,i)=><div className="line-item" key={i}><CalendarDays size={17}/><div className="grow"><strong>{e.name}</strong><small>{e.kind==='task'?'وظیفه':'موعد قسط'}</small></div></div>)}{!events.some(x=>x.date===day)&&<div className="empty">رویدادی در این روز ثبت نشده است.</div>}<button className="primary small" onClick={()=>onTask(day)}><Plus size={16}/> افزودن کار با این موعد</button></Box></div>;
 }
-export function CurrencyPage({data,onEdit,onRemove,onCreate,onToggle,canEdit,busy}){
+export function CurrencyPage({data,onEdit,onRemove,onToggle,canEdit,busy,onRefresh,online}){
  const [search,setSearch]=useState('');const rates=Object.fromEntries(data.rates.map(x=>[x.code,x]));
  const rows=data.currencies.filter(c=>(c.name+' '+c.code).toLowerCase().includes(search.toLowerCase()));
- return <Box title="ارزها و دارایی‌های نمایشی" aside={canEdit&&<button className="primary small" onClick={onCreate}><Plus size={16}/> تعریف ارز</button>}><div className="currency-toolbar"><input value={search} onChange={e=>setSearch(e.target.value)} placeholder="جست‌وجوی ارز و نماد"/><Notice>انتخاب نمایش برای هر کاربر مستقل است. غیرفعال‌کردن ارز، دارایی ثبت‌شده را حذف نمی‌کند. تومان همیشه فعال است.</Notice></div><div className="currency-list">{rows.map(c=><div className="currency-item" key={c.code}><span className="currency-icon">{c.symbol}</span><div className="grow"><strong>{c.name}</strong><small>{c.code} · {c.unit} · {rates[c.code]?.price?formatMoney(rates[c.code].price):'نرخ ثبت نشده'}</small></div><label className="currency-visible"><input type="checkbox" checked={c.is_visible!==false} disabled={busy||c.code==='TOMAN'} onChange={e=>onToggle(c.code,e.target.checked)}/><span>نمایش</span></label>{canEdit&&<><button className="icon-button" title="ویرایش" onClick={()=>onEdit(c)}><Pencil size={16}/></button>{!c.is_default&&<button className="icon-button danger" title="حذف" onClick={()=>onRemove(c)}><Trash2 size={16}/></button>}</>}</div>)}</div></Box>;
+ return <Box title="ارزها و دارایی‌های نمایشی" aside={canEdit&&<button className="button small" disabled={busy||!online} onClick={onRefresh}><RefreshCw size={15}/> به‌روزرسانی نرخ‌ها</button>}><div className="currency-toolbar"><input value={search} onChange={e=>setSearch(e.target.value)} placeholder="جست‌وجوی ارز و نماد"/><Notice>انتخاب نمایش برای هر کاربر مستقل است. غیرفعال‌کردن ارز، دارایی ثبت‌شده را حذف نمی‌کند. تومان همیشه فعال است.</Notice></div><div className="currency-list">{rows.map(c=><div className="currency-item" key={c.code}><span className="currency-icon">{c.symbol}</span><div className="grow"><strong>{c.name}</strong><small>{c.code} · {c.unit} · {rates[c.code]?.price?formatMoney(rates[c.code].price):'نرخ ثبت نشده'}</small></div><label className="currency-visible"><input type="checkbox" checked={c.is_visible!==false} disabled={busy||c.code==='TOMAN'} onChange={e=>onToggle(c.code,e.target.checked)}/><span>نمایش</span></label>{canEdit&&<><button className="icon-button" title="ویرایش" onClick={()=>onEdit(c)}><Pencil size={16}/></button>{!c.is_default&&<button className="icon-button danger" title="حذف" onClick={()=>onRemove(c)}><Trash2 size={16}/></button>}</>}</div>)}</div></Box>;
 }
 export function ClassesPage({data,onAdd,onEdit,onRemove,onChapter,onTopic,onResource,onTask,onCheck,search,setSearch}){
  const [chosen,setChosen]=useState(null),[expanded,setExpanded]=useState('');
@@ -51,11 +52,51 @@ export function UsersPage({api,request,notify}){
  async function reset(u){const password=window.prompt('رمز جدید کاربر (حداقل ۱۲ نویسه):');if(!password)return;setBusy(true);try{await request('PUT','/admin/users/'+encodeURIComponent(u.id),{password});notify('رمز کاربر تغییر کرد و نشست‌های قبلی او باطل شدند')}catch(e){notify(e.message)}finally{setBusy(false)}}
  return <><Box title="کاربران و فضای کاری مستقل"><Notice>هر کاربر وظایف، کلاس‌ها، تراکنش‌ها، پس‌انداز و سرورهای خودش را می‌بیند. نرخ‌های عمومی ارز مشترک‌اند؛ انتخاب ارزهای نمایشی برای هر کاربر مستقل است.</Notice><div className="currency-list">{users.map(u=><div className="currency-item" key={u.id}><span className="currency-icon"><Users size={19}/></span><div className="grow"><strong dir="ltr">{u.username}</strong><small>{u.role==='admin'?'مدیر اصلی':'کاربر'} · {u.active?'فعال':'غیرفعال'}</small></div>{u.role!=='admin'&&<><button className="button small" onClick={()=>reset(u)}>بازنشانی رمز</button><button className="button small" disabled={busy} onClick={()=>change(u,!u.active)}>{u.active?'غیرفعال‌کردن':'فعال‌کردن'}</button></>}</div>)}</div></Box><Box title="افزودن کاربر"><form className="new-user-form" onSubmit={add}><label>نام کاربری لاتین<input dir="ltr" value={name} onChange={e=>setName(e.target.value)} required pattern="[A-Za-z][A-Za-z0-9_.-]{2,31}"/></label><label>رمز عبور<input type="password" autoComplete="new-password" minLength={12} maxLength={256} value={pass} onChange={e=>setPass(e.target.value)} required/></label><label>تکرار رمز<input type="password" autoComplete="new-password" value={confirm} onChange={e=>setConfirm(e.target.value)} required/></label><button className="primary" disabled={busy}><Plus size={16}/> ساخت حساب کاربر</button></form></Box></>;
 }
-export function UpdatePage({api,request,notify}){
- const [config,setConfig]=useState({repo:'',configured:false}),[status,setStatus]=useState(null),[token,setToken]=useState(''),[busy,setBusy]=useState(false);
- useEffect(()=>{api('/admin/updates').then(setConfig).catch(e=>notify(e.message))},[]);
- async function save(e){e.preventDefault();setBusy(true);try{await request('PUT','/admin/updates',{repo:config.repo,token:token||undefined});setToken('');setConfig(await api('/admin/updates'));notify('تنظیمات مخزن ذخیره شد')}catch(e){notify(e.message)}finally{setBusy(false)}}
- async function check(){setBusy(true);try{setStatus(await api('/admin/updates/status'))}catch(e){notify(e.message)}finally{setBusy(false)}}
- async function update(){if(!window.confirm('درخواست انتشار نسخهٔ شاخه main از GitHub Actions ارسال شود؟'))return;setBusy(true);try{await request('POST','/admin/updates/dispatch',{});notify('درخواست انتشار به GitHub Actions ارسال شد. وضعیت را بررسی کنید.')}catch(e){notify(e.message)}finally{setBusy(false)}}
- return <><Box title="آپدیت برنامه از داخل پنل"><Notice>برای جلوگیری از خطر اجرای دستورهای سیستم از مرورگر، این دکمه فقط workflow انتشار GitHub Actions را اجرا می‌کند. راه‌اندازی اولیه کلید SSH و مجوز انتشار روی GitHub یک‌بار لازم است.</Notice><form className="new-user-form" onSubmit={save}><label>مخزن GitHub (owner/repo)<input dir="ltr" value={config.repo} onChange={e=>setConfig({...config,repo:e.target.value})} placeholder="Hosseinmehrfard/Personal-Management-Dashboard" required/></label><label>توکن دسترسی Actions:write<input type="password" value={token} autoComplete="off" placeholder={config.configured?'توکن ثبت شده؛ برای حفظ، خالی بگذارید':'github_pat_…'} onChange={e=>setToken(e.target.value)}/></label><button className="button" disabled={busy}><Save size={16}/> ذخیره تنظیمات</button></form><div className="deploy-actions"><button className="primary" disabled={busy||!config.configured} onClick={update}><CloudDownload size={17}/> شروع آپدیت از GitHub</button><button className="button" disabled={busy||!config.repo} onClick={check}><RefreshCw size={16}/> بررسی وضعیت انتشار</button></div>{status?.latest&&<div className="update-status"><strong>آخرین اجرا: {status.latest.conclusion||status.latest.status}</strong><small>Commit: {status.latest.head_sha?.slice(0,8)}</small><a href={status.latest.html_url} target="_blank" rel="noopener noreferrer">مشاهده گزارش GitHub Actions <ExternalLink size={13}/></a></div>}</Box><Box title="پیش‌نیاز راه‌اندازی انتشار"><Notice>فایل <code>.github/workflows/deploy.yml</code> باید در شاخهٔ اصلی GitHub منتشر شود و Secrets لازم برای SSH، میزبان و fingerprint در Environment تولیدی ثبت شده باشند. سرویس اجراکنندهٔ دستور آپدیت نیز یک‌بار روی سرور نصب می‌شود. تا آن زمان، دکمه آپدیت برنامه عملیاتی نیست.</Notice></Box></>;
+export function UpdatePage({api,request,notify,panelUpdate}){
+ const [config,setConfig]=useState({repo:'',configured:false});
+ const [token,setToken]=useState('');
+ const [saving,setSaving]=useState(false);
+ const {status,error,pending,busy,check,update}=panelUpdate;
+ useEffect(()=>{api('/admin/updates').then(setConfig).catch(e=>notify(e.message))},[api,notify]);
+ async function save(e){
+  e.preventDefault();
+  setSaving(true);
+  try{
+   await request('PUT','/admin/updates',{repo:config.repo,token:token||undefined});
+   setToken('');
+   setConfig(await api('/admin/updates'));
+   await check();
+   notify('تنظیمات انتشار ذخیره شد');
+  }catch(e){notify(e.message)}finally{setSaving(false)}
+ }
+ let message='در حال بررسی نسخه…';
+ if(error)message=error;
+ else if(pending)message='به‌روزرسانی در حال انجام است. پس از نصب، پنل خودکار دوباره باز می‌شود.';
+ else if(status?.configured===false)message='راه‌اندازی اولیهٔ انتشار توسط مدیر سرور لازم است.';
+ else if(status&&!status.installedRevision)message='شناسهٔ نسخهٔ نصب‌شده ثبت نشده است. راه‌اندازی اولیهٔ نسخه را روی سرور کامل کنید.';
+ else if(status?.available)message='نسخهٔ جدید آمادهٔ نصب است.';
+ else if(status)message='آخرین نسخه نصب شده است.';
+ const latest=status?.latest;
+ return <>
+  <Box title="به‌روزرسانی برنامه">
+   <p role="status">{message}</p>
+   <div className="deploy-actions">
+    {status?.available&&<button className="primary" disabled={busy||pending} onClick={update}><CloudDownload size={17}/> به‌روزرسانی برنامه</button>}
+    <button className="button" onClick={()=>check()}><RefreshCw size={16}/> بررسی نسخه</button>
+   </div>
+   {latest?.status==='completed'&&latest.conclusion!=='success'&&<p className="form-error">آخرین اجرای انتشار کامل نشد. گزارش انتشار جزئیات خطا را نشان می‌دهد.</p>}
+   {latest&&<a href={latest.html_url} target="_blank" rel="noopener noreferrer">گزارش آخرین انتشار <ExternalLink size={13}/></a>}
+  </Box>
+  <Box title="تنظیمات انتشار">
+   <details open={config.configured?undefined:true}>
+    <summary>راه‌اندازی یک‌باره توسط مدیر سرور</summary>
+    <Notice>مخزن و توکن پس از راه‌اندازی انتشار روی سرور ثبت می‌شوند. مجوز توکن برای همین مخزن باید Actions: Read and write و Contents: Read باشد.</Notice>
+    <form className="new-user-form" onSubmit={save}>
+     <label>مخزن GitHub<input dir="ltr" value={config.repo} onChange={e=>setConfig({...config,repo:e.target.value})} placeholder="owner/repo" required/></label>
+     <label>توکن انتشار<input type="password" value={token} autoComplete="off" placeholder={config.configured?'برای حفظ توکن خالی بگذارید':'github_pat_…'} onChange={e=>setToken(e.target.value)}/></label>
+     <button className="button" disabled={saving}><Save size={16}/> ذخیره تنظیمات</button>
+    </form>
+   </details>
+  </Box>
+ </>;
 }

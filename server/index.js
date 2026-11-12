@@ -6,7 +6,7 @@ import {query,tx,migrate,pool,claimLegacy} from './db.js';
 import {OWNED_TABLES,canManageGlobal} from './tenancy.js';
 import {validateGithubRepo, githubDispatch, githubStatus} from './updates.js';
 import {encrypt,decrypt,encryptionReady,randomToken,digest,safeString,moneyNumber,safeUrl,passwordOK,hashPassword,secureEqual,normalizeAdminUsername,validAdminPassword} from './security.js';
-import {effectiveRates,refreshRates} from './rates.js';
+import {effectiveRates,refreshRates,rateSnapshot} from './rates.js';
 import {DEFAULT_ARZDIGITAL,validateArzdigitalConfig} from './arzdigital.js';
 import {validateRateSource,validateNerkharaId} from './nerkhara.js';
 import {agentAllowedHost,pinnedRequest,validateMetrics,safeDocHost} from './outbound.js';
@@ -101,9 +101,7 @@ async function dashboard(userId){
  const results=await Promise.all(keys.map(k=>query(`SELECT * FROM "${k}" WHERE user_id=$1 ORDER BY ${k==='activities'?'at DESC':k==='classes'?'title':k==='chapters'?'code':k==='transactions'?'date DESC':'created_at DESC'} ${k==='activities'?'LIMIT 100':''}`,[userId])));
  const data=Object.fromEntries(keys.map((k,i)=>[k,results[i].rows]));
  const currencies=await query(`SELECT c.*,COALESCE(p.visible,true) AS is_visible FROM currencies c LEFT JOIN user_currency_preferences p ON p.code=c.code AND p.user_id=$1 ORDER BY c.code`,[userId]);
- data.currencies=currencies.rows;data.rates=await effectiveRates();
- const history=await query(`SELECT code,price_toman,at,rn FROM (SELECT code,price_toman,at,ROW_NUMBER() OVER(PARTITION BY code ORDER BY id DESC) AS rn FROM rate_history) AS h WHERE rn<=2 ORDER BY code,rn`);
- data.priceHistory=history.rows;return data;
+ return {...data,currencies:currencies.rows,...await rateSnapshot()};
 }
 app.get('/health',wrap(async(req,res)=>{await query('SELECT 1');res.json({ok:true})}));
 // Database-backed throttling survives restarts and works across app instances.
@@ -319,7 +317,13 @@ app.put('/api/settings/rate-source',wrap(async(req,res)=>{requireAdmin(req);
  res.json({ok:true,...config});
 }));
 app.get('/api/rates',wrap(async(req,res)=>res.json(await effectiveRates())));
-app.post('/api/rates/refresh',wrap(async(req,res)=>{requireAdmin(req);const result=await refreshRates(true);res.json({...result,rates:await effectiveRates()})}));
+app.get('/api/rates/snapshot',wrap(async(req,res)=>res.json(await rateSnapshot())));
+app.post('/api/rates/refresh',wrap(async(req,res)=>{
+ requireAdmin(req);
+ const result=await refreshRates(true);
+ if(result.error)return res.status(502).json({error:result.error});
+ res.json({...result,...await rateSnapshot()});
+}));
 app.get('/api/links/check',wrap(async(req,res)=>{const target=new URL(safeUrl(String(req.query.url||'')));const host=target.hostname.toLowerCase();if(!safeDocHost(host))fail('بررسی خودکار فقط برای دامنه‌های مستندات شناخته‌شده مجاز است');const r=await pinnedRequest(target.href,{method:'HEAD',maxBytes:0,timeout:6500,publicOnly:true});res.json({ok:r.status>=200&&r.status<400,status:r.status,checkedAt:new Date().toISOString()})}));
 app.get('/api/export',wrap(async(req,res)=>{const data=await dashboard(req.session.user_id);const history=(await query('SELECT code,price_toman,source,at FROM rate_history ORDER BY at DESC LIMIT 10000')).rows;const quotes=(await query('SELECT * FROM exchange_rates')).rows;res.setHeader('Content-Disposition','attachment; filename="personal-dashboard-backup.json"');res.json({version:6,exportedAt:new Date().toISOString(),...data,rate_history:history,exchange_rates:quotes})}));
 app.post('/api/import/legacy',wrap(async(req,res)=>{requireAdmin(req);
@@ -375,6 +379,9 @@ app.post('/api/import/legacy',wrap(async(req,res)=>{requireAdmin(req);
  });
  res.json({ok:true,imported});
 }));
+const installedRevision=/^[a-f0-9]{40}$/.test(process.env.DASHBOARD_REVISION||'')?process.env.DASHBOARD_REVISION:null;
+let dispatching=false;
+let dispatchAcceptedAt=0;
 // Browser-triggered updates use GitHub Actions. No Docker socket or SSH key is exposed to the web server.
 app.get('/api/admin/updates',wrap(async(req,res)=>{
  requireAdmin(req);
@@ -391,23 +398,39 @@ app.put('/api/admin/updates',wrap(async(req,res)=>{
  ON CONFLICT(name) DO UPDATE SET config=$1,encrypted_key=CASE WHEN $3::boolean THEN NULL WHEN $2::text IS NOT NULL THEN $2 ELSE provider_settings.encrypted_key END,updated_at=now()`,[{repo},token?encrypt(token):null,req.body?.clearToken===true]);
  res.json({ok:true});
 }));
+app.get('/api/admin/updates/version',wrap(async(req,res)=>{requireAdmin(req);res.json({installedRevision})}));
 app.get('/api/admin/updates/status',wrap(async(req,res)=>{
  requireAdmin(req);
  const record=(await query("SELECT config,encrypted_key FROM provider_settings WHERE name='github_updates'")).rows[0];
- if(!record?.config?.repo)fail('مخزن GitHub تنظیم نشده است');
- const token=record.encrypted_key?decrypt(record.encrypted_key):'';
- res.json(await githubStatus(record.config.repo,token));
+ if(!record?.config?.repo||!record.encrypted_key)return res.json({configured:false,installedRevision});
+ try{
+  const status=await githubStatus(record.config.repo,decrypt(record.encrypted_key),installedRevision);
+  res.json({...status,configured:true,dispatchPending:Date.now()-dispatchAcceptedAt<60_000});
+ }catch{
+  res.status(502).json({error:'بررسی نسخه در GitHub انجام نشد. اتصال سرور و مجوزهای Actions و Contents توکن را بررسی کنید.'});
+ }
 }));
 app.post('/api/admin/updates/dispatch',wrap(async(req,res)=>{
  requireAdmin(req);
- const keys=[bucket('github-update',req.session.user_id)];await throttle(keys,3);
- // Count dispatches, successful or not, to prevent unintended repeated deployments.
- await recordFailure(keys);
- const record=(await query("SELECT config,encrypted_key FROM provider_settings WHERE name='github_updates'")).rows[0];
- if(!record?.config?.repo||!record.encrypted_key)fail('توکن و مخزن GitHub در تنظیمات ثبت نشده‌اند');
- await githubDispatch(record.config.repo,decrypt(record.encrypted_key));
- await tx(async c=>logActivity(c,'درخواست آپدیت از GitHub Actions ثبت شد','system',req.session.user_id));
- res.json({ok:true,message:'درخواست اجرای workflow ثبت شد؛ نتیجه اجرا در بخش وضعیت نمایش داده می‌شود'});
+ if(dispatching||Date.now()-dispatchAcceptedAt<60_000)fail('درخواست به‌روزرسانی قبلاً ثبت شده است',409);
+ dispatching=true;
+ try{
+  const keys=[bucket('github-update',req.session.user_id)];
+  await throttle(keys,3);
+  const record=(await query("SELECT config,encrypted_key FROM provider_settings WHERE name='github_updates'")).rows[0];
+  if(!record?.config?.repo||!record.encrypted_key)fail('توکن و مخزن GitHub در تنظیمات ثبت نشده‌اند',400);
+  const token=decrypt(record.encrypted_key);
+  let status;
+  try{status=await githubStatus(record.config.repo,token,installedRevision)}
+  catch{return res.status(502).json({error:'بررسی نسخه در GitHub انجام نشد. تنظیمات انتشار را بررسی کنید.'})}
+  if(!status.available)fail('نسخه جدیدی برای نصب شناسایی نشد',409);
+  if(status.latest&&status.latest.status!=='completed')fail('انتشار دیگری در حال اجرا است',409);
+  await recordFailure(keys);
+  try{await githubDispatch(record.config.repo,token)}
+  catch{return res.status(502).json({error:'درخواست انتشار پذیرفته نشد. مجوز Actions: Write و گردش‌کار انتشار را بررسی کنید.'})}
+  dispatchAcceptedAt=Date.now();
+  res.json({ok:true});
+ }finally{dispatching=false}
 }));
 app.use('/api',(req,res)=>res.status(404).json({error:'مسیر API پیدا نشد'}));
 const dist=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'../dist');

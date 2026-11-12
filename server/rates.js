@@ -41,8 +41,8 @@ export async function refreshRates(force=false){
     });
     return {updated,provider:'nerkhara',reason:!updated?'نرخ تازه‌تری نسبت به دادهٔ ذخیره‌شده وجود ندارد':undefined};
    }catch(e){
-    if(force)throw Object.assign(new Error('دریافت نرخ‌آرا ناموفق بود؛ اتصال سرور، پاسخ سرویس یا تاریخ نرخ‌ها را بررسی کنید'),{status:502});
-    return {updated:0,provider:'nerkhara',error:'به‌روزرسانی نرخ‌آرا ناموفق بود؛ نرخ قبلی حفظ شد'};
+    console.error('NerkhAra refresh failed:',e.cause?.code||e.code||e.message);
+    return {updated:0,provider:'nerkhara',error:'دریافت نرخ‌آرا ناموفق بود. اتصال سرور و تازگی پاسخ سرویس را بررسی کنید. نرخ‌های قبلی حفظ شدند.'};
    }
   }
   if(chosen.selected==='arzdigital'){
@@ -63,8 +63,7 @@ export async function refreshRates(force=false){
     });
     return {updated:quotes.length,provider:'arzdigital'};
    }catch(e){
-    if(force)throw Object.assign(new Error('دریافت نرخ رسمی ارزدیجیتال ناموفق بود؛ کلید، آدرس API و ساختار JSON را بررسی کنید'),{status:502});
-    return {error:'دریافت نرخ ارزدیجیتال ناموفق بود',updated:0,provider:'arzdigital'};
+    return {error:'دریافت نرخ ارزدیجیتال ناموفق بود. کلید، نشانی API و ساختار پاسخ را بررسی کنید.',updated:0,provider:'arzdigital'};
    }
   }
   const settings=(await query("SELECT config,encrypted_key FROM provider_settings WHERE name='navasan'")).rows[0];
@@ -93,8 +92,7 @@ export async function refreshRates(force=false){
    if(!count)throw Error('هیچ کد ارز قابل دریافت نبود');
    return {updated:count,provider:'navasan'};
   }catch(e){
-   if(force)throw Object.assign(new Error('دریافت نرخ نوسان ناموفق بود؛ وضعیت سرویس را بررسی کنید'),{status:502});
-   return {updated:0,provider:'navasan',error:'به‌روزرسانی نرخ ناموفق بود'};
+   return {updated:0,provider:'navasan',error:'دریافت نرخ نوسان ناموفق بود. وضعیت سرویس و کلید API را بررسی کنید.'};
   }
  })().finally(()=>{inflight=null});
  return inflight;
@@ -102,4 +100,12 @@ export async function refreshRates(force=false){
 export async function effectiveRates(){
  const rows=(await query('SELECT c.code,c.manual_toman,e.price_toman,e.source,e.quoted_at FROM currencies c LEFT JOIN exchange_rates e ON e.code=c.code ORDER BY c.code')).rows;
  return rows.map(r=>({code:r.code,price:Number(r.manual_toman??r.price_toman)||null,source:r.manual_toman!=null?'دستی':r.source||'بدون نرخ',updatedAt:r.manual_toman!=null?null:r.quoted_at}));
+}
+
+export async function rateSnapshot(){
+ const [rates,history]=await Promise.all([
+  effectiveRates(),
+  query(`SELECT code,price_toman,at,rn FROM (SELECT code,price_toman,at,ROW_NUMBER() OVER(PARTITION BY code ORDER BY id DESC) AS rn FROM rate_history) AS h WHERE rn<=2 ORDER BY code,rn`)
+ ]);
+ return {rates,priceHistory:history.rows};
 }

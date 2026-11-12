@@ -1,8 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {persianParts,toIsoJalali,formatJalali,daysInMonth,changeMonth,weekPosition} from '../src/jalali.js';
+import {persianParts,toIsoJalali,formatJalali,daysInMonth,changeMonth,weekPosition,todayInTehran} from '../src/jalali.js';
 import {ownerClause,requireOwnedTable,canManageGlobal,canAccessRow,currencyVisible} from '../server/tenancy.js';
-import {validateGithubRepo} from '../server/updates.js';
+import {validateGithubRepo,githubStatus} from '../server/updates.js';
 
 test('Jalali date roundtrip for common dates and Gregorian New Year',()=>{
  const dates=['2020-03-20','2021-03-21','2024-03-20','2026-11-11','2027-03-20'];
@@ -37,4 +37,22 @@ test('Currency visibility is per account and defaults to visible',()=>{
 test('GitHub dispatch target is limited to a path-form repository',()=>{
  assert.equal(validateGithubRepo('Hosseinmehrfard/Personal-Management-Dashboard'),'Hosseinmehrfard/Personal-Management-Dashboard');
  for(const bad of ['https://github.com/a/b','x/y/../z','x/..','x/y?token=x','x//y','x/y\nZ','',null])assert.throws(()=>validateGithubRepo(bad));
+});
+
+
+test('calendar day rolls over at Tehran midnight',()=>{
+ assert.equal(todayInTehran(new Date('2026-03-20T20:29:59Z')),'2026-03-20');
+ assert.equal(todayInTehran(new Date('2026-03-20T20:30:00Z')),'2026-03-21');
+});
+
+test('update availability uses the installed revision and the current main ref',async t=>{
+ const previous='a'.repeat(40),latest='b'.repeat(40);
+ t.mock.method(globalThis,'fetch',async url=>{
+  if(url.endsWith('/git/ref/heads/main'))return Response.json({object:{sha:latest}});
+  assert.match(url,/deploy\.yml\/runs\?branch=main&per_page=1$/);
+  return Response.json({workflow_runs:[{id:5,head_sha:previous,status:'completed',conclusion:'success'}]});
+ });
+ assert.equal((await githubStatus('owner/repo','test',previous)).available,true);
+ assert.equal((await githubStatus('owner/repo','test',latest)).available,false);
+ assert.equal((await githubStatus('owner/repo','test',null)).available,false);
 });

@@ -23,9 +23,14 @@ export async function githubDispatch(repo,token){
  validateGithubRepo(repo);if(!token)throw Object.assign(new Error('توکن GitHub تنظیم نشده است'),{status:400});
  await githubRequest(`/repos/${repo}/actions/workflows/deploy.yml/dispatches`,token,'POST');return {ok:true};
 }
-export async function githubStatus(repo,token){
+export async function githubStatus(repo,token,installedRevision){
  validateGithubRepo(repo);
- const workflow=await githubRequest(`/repos/${repo}/actions/workflows/deploy.yml/runs?per_page=1`,token);
+ const [workflow,branch]=await Promise.all([
+  githubRequest(`/repos/${repo}/actions/workflows/deploy.yml/runs?branch=main&per_page=1`,token),
+  githubRequest(`/repos/${repo}/git/ref/heads/main`,token)
+ ]);
+ const availableRevision=branch.object?.sha;
+ if(!/^[a-f0-9]{40}$/.test(availableRevision||''))throw Error('شناسه نسخه GitHub نامعتبر است');
  const run=workflow.workflow_runs?.[0];
- return {repo,workflow:'deploy.yml',latest:run?{id:run.id,status:run.status,conclusion:run.conclusion,created_at:run.created_at,html_url:`https://github.com/${repo}/actions/runs/${Number(run.id)}`,head_sha:run.head_sha}:null};
+ return {repo,installedRevision,availableRevision,available:Boolean(installedRevision&&installedRevision!==availableRevision),latest:run?{id:run.id,status:run.status,conclusion:run.conclusion,created_at:run.created_at,html_url:`https://github.com/${repo}/actions/runs/${Number(run.id)}`,head_sha:run.head_sha}:null};
 }
