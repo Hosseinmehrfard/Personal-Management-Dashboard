@@ -1,6 +1,6 @@
 import React,{useEffect,useState} from 'react';
 import {Plus,Pencil,Trash2,Users,ShieldCheck,CalendarDays,ChevronRight,ChevronLeft,RefreshCw,BookOpen,Link2,ListTodo,Check,Eye,EyeOff,Save,KeyRound,CloudDownload,ExternalLink,Coins,ArrowLeft} from 'lucide-react';
-import {persianParts,toIsoJalali,daysInMonth,weekPosition,changeMonth,monthNames,weekdays,formatJalali,todayInTehran} from './jalali.js';
+import {persianParts,toIsoJalali,daysInMonth,weekPosition,changeMonth,monthNames,weekdays,formatJalali,todayInTehran,holidayName,hasAnnualHolidays} from './jalali.js';
 
 const format=new Intl.NumberFormat('fa-IR',{maximumFractionDigits:2});
 const formatYear=new Intl.NumberFormat('fa-IR',{useGrouping:false});
@@ -10,11 +10,20 @@ function Notice({children}){return <p className="helper-text">{children}</p>}
 export function JalaliCalendarGrid({year,month,selected,onSelect,items=[]}){
  const start=toIsoJalali(year,month,1),last=daysInMonth(year,month);
  if(!start)return <p>ماه شمسی نامعتبر است</p>;
- const cells=[...Array(weekPosition(start)).fill(null),...Array.from({length:last},(_,i)=>i+1)];
+ const today=todayInTehran(),leading=weekPosition(start);
+ const cells=[...Array(leading).fill(null),...Array.from({length:last},(_,i)=>i+1)];
+ const eventsByDate=new Map();
+ for(const item of items)eventsByDate.set(item.date,(eventsByDate.get(item.date)||0)+1);
+ const startTime=Date.parse(start+'T00:00:00Z');
  return <div className="jalali-grid">{weekdays.map(d=><div className="jalali-week" key={d}>{d}</div>)}{cells.map((d,i)=>{
-  const iso=d?toIsoJalali(year,month,d):null,events=d?items.filter(i=>i.date===iso):[];
-  return <button type="button" key={i} disabled={!d} className={'jalali-day '+(iso===selected?'picked ':'')+(iso===todayInTehran()?'today ':'')} onClick={()=>d&&onSelect?.(iso)}>
-   {d?<><span>{format.format(d)}</span>{events.length>0&&<span className="jalali-events">{format.format(events.length)} رویداد</span>}</>:null}
+  if(!d)return <button type="button" className="jalali-day" key={i} disabled/>;
+  const iso=new Date(startTime+(d-1)*86400000).toISOString().slice(0,10);
+  const events=eventsByDate.get(iso)||0,holiday=holidayName(year,month,d),friday=i%7===6;
+  return <button type="button" key={i}
+   className={['jalali-day',iso===selected&&'picked',iso===today&&'today',(holiday||friday)&&'holiday'].filter(Boolean).join(' ')}
+   aria-pressed={iso===selected} title={holiday||(friday?'تعطیلی جمعه':undefined)} onClick={()=>onSelect?.(iso)}>
+   <span>{format.format(d)}</span>{holiday&&<span className="jalali-holiday">{holiday}</span>}
+   {events>0&&<span className="jalali-events">{format.format(events)} رویداد</span>}
   </button>})}</div>;
 }
 export function JalaliDateInput({value,onChange,required}){
@@ -25,9 +34,40 @@ export function JalaliDateInput({value,onChange,required}){
  return <div className="jalali-input"><button type="button" className="jalali-trigger" onClick={()=>setShown(x=>!x)}><CalendarDays size={16}/>{formatJalali(value)}</button><input type="hidden" value={value||''} readOnly/>{shown&&<div className="jalali-popup"><div className="jalali-head"><button type="button" onClick={()=>move(-1)} aria-label="ماه قبل"><ChevronRight size={18}/></button><strong>{monthNames[month.month-1]} {formatYear.format(month.year)}</strong><button type="button" onClick={()=>move(1)} aria-label="ماه بعد"><ChevronLeft size={18}/></button></div><JalaliCalendarGrid {...month} selected={value} onSelect={iso=>{onChange(iso);setShown(false)}}/><div className="jalali-pop-actions"><button type="button" className="button small" onClick={()=>{onChange(todayInTehran());setShown(false)}}>امروز</button><button type="button" className="button small" onClick={()=>{onChange('');setShown(false)}}>پاک‌کردن</button><button type="button" className="button small" onClick={()=>setShown(false)}>بستن</button></div></div>}</div>;
 }
 export function CalendarPage({data,onTask}){
- const now=persianParts(todayInTehran());const [month,setMonth]=useState({year:now.year,month:now.month});const [day,setDay]=useState(todayInTehran());
- const events=[...data.tasks.filter(x=>x.due_date).map(x=>({date:String(x.due_date).slice(0,10),name:x.title,kind:'task'})),...data.installments.filter(x=>x.due_date).map(x=>({date:String(x.due_date).slice(0,10),name:x.title,kind:'installment'}))];
- return <div className="calendar-page"><Box title="تقویم شمسی و برنامه‌ها" aside={<div className="jalali-head"><button className="icon-button" aria-label="ماه قبل" onClick={()=>setMonth(v=>changeMonth(v.year,v.month,-1))}><ChevronRight size={18}/></button><strong>{monthNames[month.month-1]} {formatYear.format(month.year)}</strong><button className="icon-button" aria-label="ماه بعد" onClick={()=>setMonth(v=>changeMonth(v.year,v.month,1))}><ChevronLeft size={18}/></button></div>}><JalaliCalendarGrid {...month} selected={day} onSelect={setDay} items={events}/></Box><Box title={'برنامه‌های '+formatJalali(day)}>{events.filter(x=>x.date===day).map((e,i)=><div className="line-item" key={i}><CalendarDays size={17}/><div className="grow"><strong>{e.name}</strong><small>{e.kind==='task'?'وظیفه':'موعد قسط'}</small></div></div>)}{!events.some(x=>x.date===day)&&<div className="empty">رویدادی در این روز ثبت نشده است.</div>}<button className="primary small" onClick={()=>onTask(day)}><Plus size={16}/> افزودن کار با این موعد</button></Box></div>;
+ const today=todayInTehran(),now=persianParts(today);
+ const [month,setMonth]=useState({year:now.year,month:now.month});
+ const [day,setDay]=useState(today);
+ const events=[
+  ...data.tasks.filter(x=>x.due_date).map(x=>({date:String(x.due_date).slice(0,10),name:x.title,kind:'وظیفه',id:'task-'+x.id})),
+  ...data.installments.filter(x=>x.due_date).map(x=>({date:String(x.due_date).slice(0,10),name:x.title,kind:'موعد قسط',id:'installment-'+x.id})),
+  ...data.personal_balances.filter(x=>x.due_date&&x.total!==x.settled).map(x=>({
+   date:String(x.due_date).slice(0,10),name:x.title,kind:x.direction==='debt'?'سررسید بدهی':'سررسید طلب',id:'balance-'+x.id
+  }))
+ ];
+ const move=delta=>{
+  const next=changeMonth(month.year,month.month,delta);
+  const first=toIsoJalali(next.year,next.month,1);
+  if(first){setMonth(next);setDay(first)}
+ };
+ const chosen=persianParts(day);
+ const holiday=holidayName(chosen.year,chosen.month,chosen.day)||(weekPosition(day)===6?'تعطیلی جمعه':'');
+ const selectedEvents=events.filter(x=>x.date===day);
+ return <div className="calendar-page">
+  <Box title="تقویم شمسی و برنامه‌ها" aside={<div className="jalali-head">
+   <button className="icon-button" aria-label="ماه قبل" onClick={()=>move(-1)}><ChevronRight size={18}/></button>
+   <strong>{monthNames[month.month-1]} {formatYear.format(month.year)}</strong>
+   <button className="icon-button" aria-label="ماه بعد" onClick={()=>move(1)}><ChevronLeft size={18}/></button>
+  </div>}>
+   <JalaliCalendarGrid {...month} selected={day} onSelect={setDay} items={events}/>
+   <Notice>{hasAnnualHolidays(month.year)?'جمعه‌ها و تعطیلات رسمی به رنگ قرمز نمایش داده می‌شوند.':'برای این سال، جمعه‌ها و تعطیلات با تاریخ ثابت نمایش داده می‌شوند.'}</Notice>
+  </Box>
+  <Box title={'برنامه‌های '+formatJalali(day)}>
+   {holiday&&<div className="line-item danger"><strong>{holiday}</strong><small>تعطیل</small></div>}
+   {selectedEvents.map(e=><div className="line-item" key={e.id}><CalendarDays size={17}/><div className="grow"><strong>{e.name}</strong><small>{e.kind}</small></div></div>)}
+   {!selectedEvents.length&&!holiday&&<div className="empty">رویدادی در این روز ثبت نشده است.</div>}
+   <button className="primary small" onClick={()=>onTask(day)}><Plus size={16}/> افزودن کار با این موعد</button>
+  </Box>
+ </div>;
 }
 export function CurrencyPage({data,onEdit,onRemove,onToggle,canEdit,busy,onRefresh,online}){
  const [search,setSearch]=useState('');const rates=Object.fromEntries(data.rates.map(x=>[x.code,x]));

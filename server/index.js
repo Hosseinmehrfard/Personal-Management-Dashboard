@@ -48,11 +48,29 @@ const numOrNull=v=>v===null||v===undefined||v===''?null:moneyNumber(v);
 const numberOrZero=v=>v===null||v===''||v===undefined?0:moneyNumber(v,true);
 const allow=(v,items,def)=>items.includes(v)?v:def;
 const timestampOf=v=>{if(v===null||v===undefined||v==='')return null;if(typeof v!=='string'||v.length>40||!/^\d{4}-\d{2}-\d{2}T/.test(v)||!Number.isFinite(Date.parse(v)))fail('زمان نامعتبر است');return new Date(v).toISOString()};
+function ledgerAmount(value,signed=false){
+ const input=typeof value==='number'||typeof value==='string'?String(value).trim():'';
+ if(!/^-?\d{1,20}(?:\.\d{1,2})?$/.test(input)||(!signed&&input.startsWith('-')))fail('مبلغ را با حداکثر دو رقم اعشار وارد کنید');
+ return input;
+}
+function amountInCents(amount){
+ const [whole,fraction='']=amount.split('.');
+ return BigInt(whole)*100n+BigInt(fraction.padEnd(2,'0'));
+}
 const TYPES={
  tasks:{table:'tasks',fields:['title','category','status','priority','due_date','notes','chapter_id','class_id'],shape:v=>({title:val(v.title,180,true),category:allow(v.category,['work','personal','server','class','owasp','finance'],'work'),status:allow(v.status,['todo','progress','review','done'],'todo'),priority:allow(v.priority,['low','medium','high'],'medium'),due_date:dateOf(v.due_date??v.due),notes:val(v.notes,8000),chapter_id:val(v.chapter_id??v.chapterId,100)||null,class_id:val(v.class_id??v.classId,100)||null})},
  servers:{table:'servers',fields:['name','host','environment','mode','notes'],shape:v=>({name:val(v.name,120,true),host:val(v.host,200),environment:allow(v.environment,['production','staging','development','other'],'production'),mode:allow(v.mode,['manual','agent'],'manual'),notes:val(v.notes,8000)})},
  transactions:{table:'transactions',fields:['type','amount','date','category','description','installment_id'],shape:v=>({type:allow(v.type,['income','expense','installment'],'expense'),amount:moneyNumber(v.amount),date:dateOf(v.date)||fail('تاریخ ضروری است'),category:val(v.category,80)||'عمومی',description:val(v.description,220,true),installment_id:val(v.installment_id??v.installmentId,100)||null})},
  installments:{table:'installments',fields:['title','total','paid','monthly','due_date','notes'],shape:v=>{const total=moneyNumber(v.total),paid=numberOrZero(v.paid);if(paid>total)fail('مجموع پرداخت نباید از کل تعهد بیشتر باشد');return {title:val(v.title,180,true),total,paid,monthly:numberOrZero(v.monthly),due_date:dateOf(v.due_date??v.dueDate),notes:val(v.notes,8000)}}},
+ personal_balances:{table:'personal_balances',fields:['direction','title','total','settled','due_date','notes'],shape:v=>{
+  if(!['debt','receivable'].includes(v.direction))fail('نوع بدهی یا طلب نامعتبر است');
+  const total=ledgerAmount(v.total),settled=ledgerAmount(v.settled??0);
+  if(amountInCents(total)<=0n||amountInCents(settled)>amountInCents(total))fail('مبلغ تسویه باید بین صفر و مبلغ کل باشد');
+  return {direction:v.direction,title:val(v.title,180,true),total,settled,due_date:dateOf(v.due_date),notes:val(v.notes,1000)};
+ }},
+ bank_accounts:{table:'bank_accounts',fields:['title','bank','balance','notes'],shape:v=>({
+  title:val(v.title,120,true),bank:val(v.bank,120,true),balance:ledgerAmount(v.balance,true),notes:val(v.notes,1000)
+ })},
  holdings:{table:'holdings',fields:['asset','quantity','note'],shape:v=>({asset:val(v.asset,12,true).toUpperCase(),quantity:moneyNumber(v.quantity,true),note:val(v.note,1000)})},
  currencies:{table:'currencies',pk:'code',fields:['name','symbol','unit','navasan_code','arzdigital_code','nerkhara_id','manual_toman'],shape:v=>({name:val(v.name,100,true),symbol:val(v.symbol,16,true),unit:val(v.unit,50,true),navasan_code:val(v.navasan_code??v.navasanCode,40).toLowerCase()||null,arzdigital_code:val(v.arzdigital_code??v.arzdigitalCode,32).toUpperCase()||null,nerkhara_id:validateNerkharaId(v.nerkhara_id??null),manual_toman:numOrNull(v.manual_toman??v.manualToman)})},
  classes:{table:'classes',fields:['title','description','status','notes'],shape:v=>({title:val(v.title,200,true),description:val(v.description,8000),status:allow(v.status,['todo','progress','review','done'],'todo'),notes:val(v.notes,12000)})},
@@ -97,7 +115,7 @@ function logActivity(client,text,kind='system',userId){
  return client.query('INSERT INTO activities(id,kind,text,user_id) VALUES($1,$2,$3,$4)',[randomUUID(),kind,text.slice(0,500),userId]);
 }
 async function dashboard(userId){
- const keys=['tasks','servers','transactions','installments','holdings','classes','chapters','topics','resources','activities'];
+ const keys=OWNED_TABLES;
  const results=await Promise.all(keys.map(k=>query(`SELECT * FROM "${k}" WHERE user_id=$1 ORDER BY ${k==='activities'?'at DESC':k==='classes'?'title':k==='chapters'?'code':k==='transactions'?'date DESC':'created_at DESC'} ${k==='activities'?'LIMIT 100':''}`,[userId])));
  const data=Object.fromEntries(keys.map((k,i)=>[k,results[i].rows]));
  const currencies=await query(`SELECT c.*,COALESCE(p.visible,true) AS is_visible FROM currencies c LEFT JOIN user_currency_preferences p ON p.code=c.code AND p.user_id=$1 ORDER BY c.code`,[userId]);
@@ -329,11 +347,11 @@ app.get('/api/export',wrap(async(req,res)=>{const data=await dashboard(req.sessi
 app.post('/api/import/legacy',wrap(async(req,res)=>{requireAdmin(req);
  const old=req.body||{};
  if(!old||typeof old!=='object'||Array.isArray(old)||!Array.isArray(old.tasks)||!Array.isArray(old.chapters)||!Array.isArray(old.holdings))fail('ساختار فایل پشتیبان معتبر نیست');
- for(const k of ['tasks','chapters','holdings','servers','transactions','installments','currencies','topics','resources','activities','rate_history','exchange_rates','classes'])if(old[k]!==undefined&&(!Array.isArray(old[k])||old[k].length>5000))fail('حجم یا ساختار پشتیبان نامعتبر است');
+ for(const k of ['tasks','chapters','holdings','servers','transactions','installments','currencies','topics','resources','activities','rate_history','exchange_rates','classes','personal_balances','bank_accounts'])if(old[k]!==undefined&&(!Array.isArray(old[k])||old[k].length>5000))fail('حجم یا ساختار پشتیبان نامعتبر است');
  let imported=0;
  await tx(async c=>{
   await c.query('SELECT pg_advisory_xact_lock(7200341, 2)');
-  const existing=(await c.query('SELECT (SELECT count(*) FROM tasks WHERE user_id=$1)+(SELECT count(*) FROM holdings WHERE user_id=$1)+(SELECT count(*) FROM transactions WHERE user_id=$1)+(SELECT count(*) FROM servers WHERE user_id=$1)+(SELECT count(*) FROM classes WHERE user_id=$1)+(SELECT count(*) FROM chapters WHERE user_id=$1) AS n',[req.session.user_id])).rows[0];
+  const existing=(await c.query('SELECT (SELECT count(*) FROM tasks WHERE user_id=$1)+(SELECT count(*) FROM holdings WHERE user_id=$1)+(SELECT count(*) FROM transactions WHERE user_id=$1)+(SELECT count(*) FROM servers WHERE user_id=$1)+(SELECT count(*) FROM classes WHERE user_id=$1)+(SELECT count(*) FROM chapters WHERE user_id=$1)+(SELECT count(*) FROM installments WHERE user_id=$1)+(SELECT count(*) FROM personal_balances WHERE user_id=$1)+(SELECT count(*) FROM bank_accounts WHERE user_id=$1) AS n',[req.session.user_id])).rows[0];
   if(Number(existing.n)>0)fail('برای جلوگیری از تداخل، دیتابیس باید بدون اطلاعات کاربر باشد');
   const settings=old.settings||{};
   // Both v2 (nested chapters, customCurrencies) and v3 (relational arrays) are supported.
@@ -354,7 +372,7 @@ app.post('/api/import/legacy',wrap(async(req,res)=>{requireAdmin(req);
   const resources=old.version>=3?(old.resources||[]):old.chapters.flatMap(ch=>(ch.resources||[]).map(x=>({...x,chapter_id:ch.id})));
   for(const item of topics){await putRecord(c,'topics',idOf(item.id||randomUUID()),item,req.session.user_id);imported++;}
   for(const item of resources){await putRecord(c,'resources',idOf(item.id||randomUUID()),item,req.session.user_id);imported++;}
-  for(const kind of ['tasks','servers','transactions','installments','holdings']){
+  for(const kind of ['tasks','servers','installments','transactions','holdings','personal_balances','bank_accounts']){
    for(const source of old[kind]||[]){
     const id=idOf(source.id||randomUUID());const item={...source,id};if(kind==='tasks'&&item.class_id&&!old.classes?.some(c=>c.id===item.class_id))item.class_id=legacyClassId;
     if(kind==='transactions'&&Number(item.amount)<=0)continue;

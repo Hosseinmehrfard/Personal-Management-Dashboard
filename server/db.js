@@ -1,5 +1,7 @@
 import pg from 'pg';
 import { randomUUID } from 'node:crypto';
+// PostgreSQL DATE has no timezone. Keep its ISO date intact for Jalali conversion.
+pg.types.setTypeParser(1082,value=>value);
 export const pool=new pg.Pool({connectionString:process.env.DATABASE_URL,max:10,connectionTimeoutMillis:10000,statement_timeout:15000,idle_in_transaction_session_timeout:15000});
 export const query=(sql,args=[])=>pool.query(sql,args);
 export const tx=async fn=>{const client=await pool.connect();try{await client.query('BEGIN');const v=await fn(client);await client.query('COMMIT');return v}catch(e){await client.query('ROLLBACK');throw e}finally{client.release()}};
@@ -80,6 +82,22 @@ export async function migrate(){
   await c.query(`CREATE INDEX IF NOT EXISTS idx_chapters_class ON chapters(class_id)`);
   await c.query(`CREATE INDEX IF NOT EXISTS idx_tasks_class ON tasks(class_id)`);
   await c.query(`INSERT INTO schema_migrations(version) VALUES(5) ON CONFLICT DO NOTHING`);
+  await c.query(`CREATE TABLE IF NOT EXISTS personal_balances(
+   id text PRIMARY KEY, user_id text NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
+   direction text NOT NULL CHECK(direction IN ('debt','receivable')),
+   title text NOT NULL, total numeric(22,2) NOT NULL CHECK(total>0),
+   settled numeric(22,2) NOT NULL DEFAULT 0 CHECK(settled>=0 AND settled<=total),
+   due_date date, notes text NOT NULL DEFAULT '', created_at timestamptz NOT NULL DEFAULT now()
+  )`);
+  await c.query(`CREATE TABLE IF NOT EXISTS bank_accounts(
+   id text PRIMARY KEY, user_id text NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
+   title text NOT NULL, bank text NOT NULL, balance numeric(22,2) NOT NULL,
+   notes text NOT NULL DEFAULT '', created_at timestamptz NOT NULL DEFAULT now()
+  )`);
+  for(const table of ['personal_balances','bank_accounts']){
+   await c.query(`CREATE INDEX IF NOT EXISTS "idx_${table}_owner" ON "${table}"(user_id)`);
+  }
+  await c.query('INSERT INTO schema_migrations(version) VALUES(6) ON CONFLICT DO NOTHING');
   const initialOwner=(await c.query(`SELECT id FROM users WHERE role='admin' ORDER BY created_at LIMIT 1`)).rows[0]?.id;
   if(initialOwner)await claimLegacy(c,initialOwner);
   // Enforce non-null ownership whenever all historic records have been assigned.

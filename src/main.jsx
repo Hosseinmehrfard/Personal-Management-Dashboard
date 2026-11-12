@@ -2,25 +2,54 @@ import React,{useEffect,useMemo,useState,useCallback,useRef} from 'react';
 import {createRoot} from 'react-dom/client';
 import {LayoutDashboard,ListTodo,Server,Wallet,ShieldCheck,Settings as SettingsIcon,Plus,RefreshCw,LogOut,Menu,X,Check,AlertTriangle,Clock,Activity,HardDrive,Cpu,MemoryStick,TrendingUp,TrendingDown,ArrowLeft,Pencil,Trash2,Download,Upload,Link2,ExternalLink,Coins,CircleCheck,Search,Save,KeyRound,Database,Wifi,WifiOff,Eye,BookOpen,CalendarDays,ChevronDown,SlidersHorizontal} from 'lucide-react';
 import './styles.css';
+import {changeMonth,monthNames,persianParts,todayInTehran} from './jalali.js';
 import {usePanelUpdate} from './usePanelUpdate.js';
 import {CalendarPage,CurrencyPage,ClassesPage,UsersPage,UpdatePage,JalaliDateInput} from './ExtraPages.jsx';
 
-const PA=[['overview','نمای کلی',LayoutDashboard],['tasks','کارهای روزانه',ListTodo],['servers','مدیریت سرورها',Server],['finance','مدیریت مالی',Wallet],['currencies','ارزها',Coins],['classes','کلاس‌ها',BookOpen],['calendar','تقویم شمسی',CalendarDays],['users','مدیریت کاربران',ShieldCheck],['updates','آپدیت برنامه',RefreshCw],['settings','تنظیمات و پشتیبان',SettingsIcon]];
+const PA=[['overview','نمای کلی',LayoutDashboard],['tasks','کارهای روزانه',ListTodo],['servers','مدیریت سرورها',Server],['finance','حسابداری',Wallet],['currencies','ارزها',Coins],['classes','کلاس‌ها',BookOpen],['calendar','تقویم شمسی',CalendarDays],['users','مدیریت کاربران',ShieldCheck],['updates','آپدیت برنامه',RefreshCw],['settings','تنظیمات و پشتیبان',SettingsIcon]];
 const fmt=new Intl.NumberFormat('fa-IR',{maximumFractionDigits:2});const fmt0=new Intl.NumberFormat('fa-IR',{maximumFractionDigits:0});
 const numeric=x=>Number(x)||0;
 const money=v=>fmt0.format(Math.round(numeric(v)))+' تومان';
 const shortMoney=x=>Math.abs(x)>=1e9?fmt.format(x/1e9)+' میلیارد':Math.abs(x)>=1e6?fmt.format(x/1e6)+' میلیون':Math.abs(x)>=1e3?fmt.format(x/1e3)+' هزار':fmt.format(x);
 const pct=(a,b)=>numeric(b)>0?Math.min(100,Math.max(0,100*numeric(a)/numeric(b))):0;
 const dateOnly=d=>String(d||'').slice(0,10);
-const faDate=d=>{if(!d)return '—';try{return new Intl.DateTimeFormat('fa-IR-u-ca-persian',{day:'numeric',month:'short',year:'numeric'}).format(new Date(d))}catch{return '—'}};
+const calendarDate=new Intl.DateTimeFormat('fa-IR-u-ca-persian',{day:'numeric',month:'short',year:'numeric',timeZone:'UTC'});
+const faDate=d=>{const date=new Date(dateOnly(d)+'T00:00:00Z');return Number.isFinite(+date)?calendarDate.format(date):'—'};
 const faDateTime=d=>{if(!d)return 'ثبت نشده';try{return new Intl.DateTimeFormat('fa-IR-u-ca-persian',{year:'numeric',month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'}).format(new Date(d))}catch{return 'نامشخص'}};
-const monthKey=d=>new Intl.DateTimeFormat('en-US-u-ca-persian',{year:'numeric',month:'2-digit'}).formatToParts(new Date(d)).filter(p=>['year','month'].includes(p.type)).map(p=>p.value).join('-');
+const monthId=({year,month})=>`${year}-${String(month).padStart(2,'0')}`;
+const monthKey=date=>{const p=persianParts(date);return p?monthId(p):''};
+const monthLabel=key=>{const [year,month]=key.split('-').map(Number);return monthNames[month-1]+' '+String(year).replace(/\d/g,d=>'۰۱۲۳۴۵۶۷۸۹'[d])};
+const accountingMoney=value=>fmt.format(value)+' تومان';
+function ledgerCents(value){
+ const [whole,fraction='']=String(value).replace(/^-/, '').split('.');
+ const cents=BigInt(whole)*100n+BigInt(fraction.padEnd(2,'0'));
+ return String(value).startsWith('-')?-cents:cents;
+}
+function ledgerMoney(cents){
+ const absolute=cents<0n?-cents:cents;
+ return accountingMoney(`${cents<0n?'-':''}${absolute/100n}.${String(absolute%100n).padStart(2,'0')}`);
+}
+const balanceTabs={debt:'بدهکاری شخصی',receivable:'طلبکاری شخصی'};
+const financeTabs=[['transactions','تراکنش‌ها'],['installments','اقساط'],['savings','پس‌انداز'],...Object.entries(balanceTabs),['bank_accounts','حساب‌های بانکی'],['report','گزارش پایان ماه']];
+function indexTransactions(rows){
+ const months=new Map();
+ for(const row of rows){
+  const key=monthKey(row.date);
+  if(!key)continue;
+  if(!months.has(key))months.set(key,{rows:[],income:0,expense:0,installment:0});
+  const month=months.get(key);
+  month.rows.push(row);
+  month[row.type]+=numeric(row.amount);
+ }
+ return months;
+}
+const emptyMonth={rows:[],income:0,expense:0,installment:0};
 const statusText={todo:'شروع نشده',progress:'در حال انجام',review:'نیازمند بررسی',done:'تکمیل‌شده',pending:'بررسی‌نشده',verified:'تأییدشده',broken:'نامعتبر'};
 const priorityText={low:'کم',medium:'متوسط',high:'بالا'};
 const sections={work:'کاری',personal:'شخصی',server:'سرور',owasp:'آموزش',class:'کلاس‌ها',finance:'مالی'};
 const badge=(v)=>statusText[v]||v||'—';
 const cn=(...x)=>x.filter(Boolean).join(' ');
-const EMPTY={tasks:[],servers:[],transactions:[],installments:[],holdings:[],currencies:[],classes:[],chapters:[],topics:[],resources:[],activities:[],rates:[],priceHistory:[]};
+const EMPTY={tasks:[],servers:[],transactions:[],personal_balances:[],bank_accounts:[],installments:[],holdings:[],currencies:[],classes:[],chapters:[],topics:[],resources:[],activities:[],rates:[],priceHistory:[]};
 let csrf='';
 async function api(url,opts={}){const resp=await fetch('/api'+url,{credentials:'same-origin',...opts,headers:{...(opts.body?{'Content-Type':'application/json'}:{}),...(!['GET','HEAD'].includes(opts.method||'GET')?{'X-CSRF-Token':csrf}:{}),...(opts.headers||{})}});const json=await resp.json().catch(()=>({}));if(resp.status===401&&url!=='/auth/status'&&url!=='/login')window.dispatchEvent(new Event('markaz:expired'));if(!resp.ok)throw Error(json.error||'خطای سرویس '+resp.status);return json;}
 const request=(method,url,body)=>api(url,{method,body:body===undefined?undefined:JSON.stringify(body)});
@@ -69,8 +98,10 @@ function App(){
  async function run(fn,ok='تغییرات ذخیره شد'){setBusy(true);try{await fn();await load();setModal(null);alert(ok)}catch(e){alert(e.message)}finally{setBusy(false)}}
  async function save(kind,values,orig){await run(()=>request(orig?'PUT':'POST',`/${kind}${orig?'/'+encodeURIComponent(orig.id||orig.code):''}`,values))}
  async function remove(kind,obj){if(!window.confirm('این مورد حذف شود؟'))return;await run(()=>request('DELETE',`/${kind}/${encodeURIComponent(obj.id||obj.code)}`,{}),'مورد حذف شد')}
- const txThisMonth=useMemo(()=>{const current=monthKey(new Date());return data.transactions.filter(t=>t.date&&monthKey(t.date)===current)},[data.transactions]);
- const income=txThisMonth.filter(t=>t.type==='income').reduce((s,t)=>s+numeric(t.amount),0);const expenses=txThisMonth.filter(t=>t.type!=='income').reduce((s,t)=>s+numeric(t.amount),0);
+ const monthlyTransactions=useMemo(()=>indexTransactions(data.transactions),[data.transactions]);
+ const today=todayInTehran(),currentMonth=persianParts(today);
+ const monthTotals=monthlyTransactions.get(monthId(currentMonth))||emptyMonth;
+ const income=monthTotals.income,expenses=monthTotals.expense+monthTotals.installment;
  const remaining=data.installments.reduce((s,t)=>s+Math.max(0,numeric(t.total)-numeric(t.paid)),0);
  const rateBy=Object.fromEntries(data.rates.map(r=>[r.code,r]));const currBy=Object.fromEntries(data.currencies.map(c=>[c.code,c]));
  const portfolio=data.holdings.reduce((s,h)=>s+numeric(h.quantity)*numeric(rateBy[h.asset]?.price),0);
@@ -80,8 +111,12 @@ function App(){
  const chapDone=data.chapters.filter(c=>c.status==='done').length;const resourcesReview=data.resources.filter(r=>r.status!=='verified');
  const nav=label=>{setPage(label);setDrawer(false);setSearch('')};
  function fieldModal(kind,item=null,extras={}){setModal({kind,item,extras})}
+ function openFinanceEditor(tab){
+  if(balanceTabs[tab])fieldModal('personal_balances',null,{direction:tab});
+  else fieldModal(tab==='savings'?'holdings':tab);
+ }
  async function downloadOwnBackup(){try{const resp=await fetch('/api/export',{credentials:'same-origin'});if(!resp.ok)throw Error('پشتیبان قابل دریافت نیست');const blob=await resp.blob(),url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download='personal-dashboard-'+new Date().toISOString().slice(0,10)+'.json';a.click();URL.revokeObjectURL(url)}catch(e){alert(e.message)}}
- const openNew=()=>{if(page==='overview'||page==='tasks'||page==='calendar')fieldModal('tasks');else if(page==='servers')fieldModal('servers');else if(page==='finance')fieldModal(financeTab==='savings'?'holdings':financeTab==='installments'?'installments':'transactions');else if(page==='currencies')fieldModal('currencies');else if(page==='classes')fieldModal('classes')};
+ const openNew=()=>{if(page==='overview'||page==='tasks'||page==='calendar')fieldModal('tasks');else if(page==='servers')fieldModal('servers');else if(page==='finance')openFinanceEditor(financeTab);else if(page==='currencies')fieldModal('currencies');else if(page==='classes')fieldModal('classes')};
  if(loading)return <div className="loading-screen"><div className="spinner"/>در حال راه‌اندازی…</div>;
  if(!auth)return <div className="login-layout"><div className="login-panel"><div className="login-brand"><span className="logo">م</span><div><strong>پنل مدیریت شخصی</strong><small>داشبورد شخصی React + PostgreSQL</small></div></div>
  {authError?<><h1>اتصال برقرار نیست</h1><p className="form-error">{authError}</p><button className="primary" onClick={()=>window.location.reload()}>تلاش مجدد</button></>:setupRequired?<><div className="setup-marker"><ShieldCheck size={17}/> راه‌اندازی یک‌باره</div><h1>ایجاد حساب مدیر</h1><p>اولین بار است که پنل باز می‌شود. نام کاربری و رمز عبور دلخواه را تعیین کنید. کد راه‌اندازی اختصاصی در پایان نصب سرور نمایش داده شده و در فایل امن <code>.env</code> قرار دارد.</p><form onSubmit={firstSetup} className="form stack">
@@ -95,7 +130,7 @@ function App(){
   {drawer&&<div className="mobile-mask" onClick={()=>setDrawer(false)}/>}
   <aside className={cn('sidebar',drawer&&'sidebar-open')}><div className="brand"><span className="logo">م</span><div><strong>پنل مدیریت شخصی</strong><small>داشبورد یکپارچه</small></div></div><div className="nav-label">فضای کاری من</div><nav>{PA.filter(([k])=>!['settings','users','updates'].includes(k)).map(([k,t,Icon])=><button key={k} className={cn('nav-link',page===k&&'active')} onClick={()=>nav(k)}><Icon size={19} strokeWidth={1.9}/><span>{t}</span>{k==='tasks'&&taskOpen>0&&<em>{fmt.format(taskOpen)}</em>}</button>)}</nav><div className="nav-label">سیستم</div><nav>{role==='admin'&&PA.filter(([k])=>['users','updates'].includes(k)).map(([k,t,Icon])=><button className={cn('nav-link',page===k&&'active')} key={k} onClick={()=>nav(k)}><Icon size={19}/>{t}</button>)}<button className={cn('nav-link',page==='settings'&&'active')} onClick={()=>nav('settings')}><SettingsIcon size={19}/> تنظیمات و پشتیبان</button></nav><div className="sidebar-bottom"><span className="avatar">{username?.[0]?.toUpperCase()||'ک'}</span><div><strong>{username||'مدیر سیستم'}</strong><small>{isOnline?(role==='admin'?'مدیر سیستم':'فضای کاری شخصی'):'ارتباط قطع است'}</small></div>{isOnline?<Wifi size={17} className="good"/>:<WifiOff size={17} className="danger"/>}</div></aside>
   <div className="workspace"><header className="topbar"><div className="header-leading"><button className="icon-button mobile-only" onClick={()=>setDrawer(true)} aria-label="فهرست"><Menu size={22}/></button><div className="breadcrumb">فضای کاری <span>/</span> <strong>{PA.find(([k])=>k===page)?.[1]}</strong></div></div><div className="header-actions"><div className={cn('connection',isOnline?'good':'danger')}><span className="pulse"/>{isOnline?'آنلاین':'آفلاین'}</div>{installPrompt&&<button className="button small" onClick={async()=>{await installPrompt.prompt();setInstallPrompt(null)}}>نصب وب‌اپ</button>}<button className="icon-button" onClick={logout} title="خروج"><LogOut size={19}/></button></div></header>
-   <main className="main"><div className="heading"><div><p className="eyebrow">داشبورد مدیریتی / {new Intl.DateTimeFormat('fa-IR-u-ca-persian',{dateStyle:'long',timeZone:'Asia/Tehran'}).format(new Date())}</p><h1>{PA.find(([k])=>k===page)?.[1]}</h1><p className="subtitle">{({overview:'خلاصه‌ای از وضعیت همه بخش‌ها و اقدامات بعدی',tasks:'برنامه‌ریزی و پیگیری کارهای شخصی و پروژه‌ها',servers:'مصرف واقعی یا دستی پردازنده، حافظه و دیسک',finance:'ورودی و خروجی پول، اقساط و سبد دارایی به تومان',currencies:'انتخاب ارزهای نمایشی و مدیریت نرخ‌های تومان',classes:'ساخت کلاس، مباحث، منابع و کارهای آموزشی',calendar:'تقویم شمسی برای وظایف و اقساط',users:'مدیریت حساب‌ها و فضاهای کاری مستقل',updates:'به‌روزرسانی امن از طریق GitHub Actions',settings:'اتصال سرویس‌ها، امنیت و نگهداری اطلاعات'})[page]}</p></div>{!['overview','settings','users','updates','calendar','classes'].includes(page)&&(page!=='currencies'||role==='admin')&&<button className="primary" onClick={openNew}><Plus size={18}/> افزودن جدید</button>}</div>
+   <main className="main"><div className="heading"><div><p className="eyebrow">داشبورد مدیریتی / {new Intl.DateTimeFormat('fa-IR-u-ca-persian',{dateStyle:'long',timeZone:'Asia/Tehran'}).format(new Date())}</p><h1>{PA.find(([k])=>k===page)?.[1]}</h1><p className="subtitle">{({overview:'خلاصه‌ای از وضعیت همه بخش‌ها و اقدامات بعدی',tasks:'برنامه‌ریزی و پیگیری کارهای شخصی و پروژه‌ها',servers:'مصرف واقعی یا دستی پردازنده، حافظه و دیسک',finance:'تراکنش‌ها، بدهی و طلب، حساب‌های بانکی و گزارش ماهانه',currencies:'انتخاب ارزهای نمایشی و مدیریت نرخ‌های تومان',classes:'ساخت کلاس، مباحث، منابع و کارهای آموزشی',calendar:'تعطیلات، وظایف و سررسیدهای مالی',users:'مدیریت حساب‌ها و فضاهای کاری مستقل',updates:'به‌روزرسانی امن از طریق GitHub Actions',settings:'اتصال سرویس‌ها، امنیت و نگهداری اطلاعات'})[page]}</p></div>{!['overview','settings','users','updates','calendar','classes'].includes(page)&&(page!=='currencies'||role==='admin')&&!(page==='finance'&&financeTab==='report')&&<button className="primary" onClick={openNew}><Plus size={18}/> افزودن جدید</button>}</div>
    {role==='admin'&&page!=='updates'&&(panelUpdate.status?.available||panelUpdate.pending)&&<section className="panel update-banner" aria-live="polite">
     <strong>{panelUpdate.pending?'به‌روزرسانی برنامه در حال انجام است':'نسخهٔ جدید برنامه آمادهٔ نصب است'}</strong>
     {panelUpdate.pending?<button className="button small" onClick={()=>nav('updates')}>وضعیت به‌روزرسانی</button>:<button className="primary small" disabled={panelUpdate.busy||!isOnline} onClick={panelUpdate.update}><RefreshCw size={16}/> به‌روزرسانی برنامه</button>}
@@ -121,7 +156,7 @@ function App(){
    {page==='calendar'&&<CalendarPage data={data} onTask={date=>fieldModal('tasks',null,{due_date:date})}/>}
    {page==='users'&&role==='admin'&&<UsersPage api={api} request={request} notify={alert}/>}
    {page==='updates'&&role==='admin'&&<UpdatePage api={api} request={request} notify={alert} panelUpdate={panelUpdate}/>}
-   {page==='finance'&&<Finance {...{data,financeTab,setFinanceTab,income,expenses,remaining,portfolio,noRate,rateBy,currBy}} add={k=>fieldModal(k)} edit={(k,x)=>fieldModal(k,x)} del={remove} pay={x=>fieldModal('payment',x)} />}
+   {page==='finance'&&<Finance {...{data,financeTab,setFinanceTab,income,expenses,remaining,portfolio,noRate,rateBy,currBy,monthlyTransactions,currentMonth}} add={openFinanceEditor} edit={(k,x)=>fieldModal(k,x)} del={remove} pay={x=>fieldModal('payment',x)} />}
    {page==='settings'&&role==='admin'&&<Settings {...{provider,arzdigital,rateSource,busy,alert,username}} rateSourceOpen={()=>fieldModal('rateSource')} arzdigitalOpen={()=>fieldModal('arzdigital')} usernameOpen={()=>fieldModal('username')} providerOpen={()=>fieldModal('provider')} passwordOpen={()=>fieldModal('password')} importOpen={()=>fieldModal('import')} exportData={async()=>{try{const resp=await fetch('/api/export',{credentials:'same-origin'});if(!resp.ok)throw Error('خروجی قابل دریافت نیست');const blob=await resp.blob();const u=URL.createObjectURL(blob);const a=document.createElement('a');a.href=u;a.download='personal-dashboard-backup-'+new Date().toISOString().slice(0,10)+'.json';a.click();URL.revokeObjectURL(u)}catch(e){alert(e.message)}}} />}
    {page==='settings'&&role!=='admin'&&<div className="settings-grid"><Panel title="حساب کاربری"><div className="settings-row"><strong>نام کاربری: {username}</strong><button className="button" onClick={()=>fieldModal('username')}>تغییر نام کاربری</button><button className="button" onClick={()=>fieldModal('password')}>تغییر رمز عبور</button></div></Panel><Panel title="پشتیبان داده‌های شخصی"><div className="settings-row"><p className="helper-text">فایل JSON فقط داده‌های همین حساب را دارد و کلیدهای API در آن قرار نمی‌گیرند.</p><button className="button" onClick={downloadOwnBackup}><Download size={16}/> دریافت پشتیبان</button></div></Panel><Panel title="نصب وب‌اپ"><p className="helper-text">از گزینه افزودن به صفحه اصلی مرورگر، این پنل را نصب کنید. هر حساب داده‌های مختص خود را دارد.</p></Panel></div>}
    </main><footer className="footer">پنل مدیریت شخصی نسخه ۶.۱ · React / PostgreSQL / PWA <span>تمام نرخ‌های دارایی: تومان</span></footer></div>
@@ -147,33 +182,118 @@ function ActivityList({list}){return list.length?list.map(a=><div className="lin
 function Tasks({items,search,setSearch,edit,remove,toggle}){const [filter,setFilter]=useState('all');const shown=items.filter(t=>(filter==='all'||t.status===filter)&&((t.title+' '+t.notes).toLowerCase().includes(search.toLowerCase())));return <><div className="stats-grid compact"><Stat title="همه کارها" number={fmt.format(items.length)} icon={ListTodo} tone="blue"/><Stat title="کارهای باز" number={fmt.format(items.filter(t=>t.status!=='done').length)} icon={Clock} tone="orange"/><Stat title="تکمیل‌شده" number={fmt.format(items.filter(t=>t.status==='done').length)} icon={CircleCheck} tone="green"/><Stat title="پیشرفت" number={fmt.format(pct(items.filter(t=>t.status==='done').length,items.length).toFixed(0))+'٪'} icon={TrendingUp} tone="violet"/></div><div className="toolbar"><div className="tabs">{[['all','همه'],['todo','شروع نشده'],['progress','در جریان'],['review','بازبینی'],['done','تکمیل']].map(([k,t])=><button key={k} className={filter===k?'selected':''} onClick={()=>setFilter(k)}>{t}</button>)}</div><div className="search"><Search size={17}/><input value={search} onChange={e=>setSearch(e.target.value)} placeholder="جست‌وجوی کارها"/></div></div><Panel title="فهرست کارهای روزانه" aside={<span className="count-label">{fmt.format(shown.length)} کار</span>}><div className="records">{shown.map(t=><div className="record" key={t.id}><button className={cn('task-checkbox',t.status==='done'&&'checked')} onClick={()=>toggle(t)} aria-label="تغییر وضعیت"><Check size={15}/></button><span className={'priority priority-'+t.priority}/><div className="grow"><strong className={t.status==='done'?'struck':''}>{t.title}</strong><small>{sections[t.category]||'کار'} · اولویت {priorityText[t.priority]} {t.due_date?' · موعد '+faDate(t.due_date):''}</small>{t.notes&&<p className="short-note">{t.notes}</p>}</div><Status value={t.status}/><Actions onEdit={()=>edit(t)} onDelete={()=>remove(t)}/></div>)}{shown.length===0&&<Empty text="کاری مطابق فیلتر پیدا نشد"/>}</div></Panel></>}
 function Gauge({name,value,detail}){return <div className="gauge"><div className="gauge-row"><span>{name}</span><strong>{value===null?'—':fmt.format(value)+'٪'}</strong></div><Progress value={value||0}/><small>{detail||'بدون اطلاعات'}</small></div>}
 function Servers({servers,busy,edit,del,metrics,connect,poll}){return <><div className="stats-grid compact"><Stat title="سرورهای ثبت‌شده" number={fmt.format(servers.length)} icon={Server}/><Stat title="پایش زنده" number={fmt.format(servers.filter(x=>x.mode==='agent').length)} icon={Activity} tone="green"/><Stat title="دارای اطلاعات" number={fmt.format(servers.filter(x=>x.metrics).length)} icon={Cpu} tone="violet"/><Stat title="بدون داده" number={fmt.format(servers.filter(x=>!x.metrics).length)} icon={AlertTriangle} tone="orange"/></div><div className="server-grid">{servers.map(s=>{const m=s.metrics;const ram=m?pct(m.memory?.used,m.memory?.total):null;const disk=m?pct(m.disk?.used,m.disk?.total):null;return <Panel className="server-panel" key={s.id} title={<><Server size={20}/>{s.name}</>} aside={<span className={cn('source-label',s.metrics_source==='agent'?'green':'')}>{s.mode==='agent'?'عامل پایش':'ثبت دستی'}</span>}><p className="server-host" dir="ltr">{s.host||'آدرس ثبت نشده'}</p><Gauge name="پردازنده (CPU)" value={m?numeric(m.cpu?.usagePercent):null} detail={m?.cpu?.cores?fmt.format(m.cpu.cores)+' هسته':'اطلاعات پردازنده'}/><Gauge name="حافظه (RAM)" value={ram} detail={m?`${fmt.format(numeric(m.memory.used)/1073741824)} از ${fmt.format(numeric(m.memory.total)/1073741824)} گیگابایت`:'بدون داده'}/><Gauge name="فضای دیسک" value={disk} detail={m?`${fmt.format(numeric(m.disk.used)/1073741824)} از ${fmt.format(numeric(m.disk.total)/1073741824)} گیگابایت`:'بدون داده'}/><div className="server-time">{s.metrics_at?'آخرین اندازه‌گیری: '+faDate(s.metrics_at):'هنوز اندازه‌گیری ثبت نشده است'}</div><div className="server-buttons"><button className="button small" onClick={()=>metrics(s)}><Cpu size={15}/> منابع</button><button className="button small" onClick={()=>connect(s)}><Link2 size={15}/> اتصال</button><button className="button small" disabled={busy||s.mode!=='agent'} onClick={()=>poll(s)}><RefreshCw size={15}/> پایش</button><button className="icon-button" onClick={()=>edit(s)}><Pencil size={16}/></button><button className="icon-button danger" onClick={()=>del(s)}><Trash2 size={16}/></button></div></Panel>})}</div>{!servers.length&&<Panel title="سرورها"><Empty text="برای شروع، نخستین سرور را ثبت کنید"/></Panel>}</>}
-function Finance({data,financeTab,setFinanceTab,income,expenses,remaining,portfolio,noRate,rateBy,currBy,add,edit,del,pay}){
- const [monthFilter,setMonthFilter]=useState('all');const knownMonths=[...new Set(data.transactions.map(x=>x.date?monthKey(x.date):'').filter(Boolean))].sort().reverse();const current=monthKey(new Date());
- const transactions=data.transactions.filter(t=>monthFilter==='all'||monthKey(t.date)===monthFilter);
+function Finance({data,financeTab,setFinanceTab,income,expenses,remaining,portfolio,noRate,rateBy,currBy,monthlyTransactions,currentMonth,add,edit,del,pay}){
+ const [monthFilter,setMonthFilter]=useState('all');
+ const knownMonths=[...monthlyTransactions.keys()].sort().reverse();
+ const transactions=monthFilter==='all'?data.transactions:(monthlyTransactions.get(monthFilter)||emptyMonth).rows;
+ const totalsByMonth=Array.from({length:6},(_,index)=>{
+  const month=monthId(changeMonth(currentMonth.year,currentMonth.month,index-5));
+  const totals=monthlyTransactions.get(month)||emptyMonth;
+  return {month,income:totals.income,expense:totals.expense+totals.installment};
+ });
  const lastTwo=(data.priceHistory||[]).reduce((m,h)=>{(m[h.code]??=[]).push(h);return m},{});
  let priceChange=0,compared=0;
  for(const h of data.holdings){const quotes=lastTwo[h.asset]||[];const last=quotes.find(x=>Number(x.rn)===1),prev=quotes.find(x=>Number(x.rn)===2),current=rateBy[h.asset]?.price;
   if(last&&prev&&current&&Math.abs(numeric(current)-numeric(last.price_toman))<0.01){priceChange+=numeric(h.quantity)*(numeric(last.price_toman)-numeric(prev.price_toman));compared++}
  }
 
- const totalsByMonth=knownMonths.slice(0,6).reverse().map(m=>({month:m,income:data.transactions.filter(t=>monthKey(t.date)===m&&t.type==='income').reduce((s,t)=>s+numeric(t.amount),0),expense:data.transactions.filter(t=>monthKey(t.date)===m&&t.type!=='income').reduce((s,t)=>s+numeric(t.amount),0)}));
  const maxMonth=Math.max(1,...totalsByMonth.map(x=>Math.max(x.income,x.expense)));
  return <><div className="stats-grid compact"><Stat title="درآمد ماه جاری" number={shortMoney(income)} suffix="تومان" icon={TrendingUp} tone="green"/><Stat title="هزینه ماه جاری" number={shortMoney(expenses)} suffix="تومان" icon={TrendingDown} tone="orange"/><Stat title="ارزش پس‌انداز" number={noRate&&noRate===data.holdings.length?'—':shortMoney(portfolio)} suffix={noRate&&noRate===data.holdings.length?undefined:'تومان'} icon={Wallet} tone="blue"/><Stat title="اقساط باقیمانده" number={shortMoney(remaining)} suffix="تومان" icon={CalendarDays} tone="violet"/></div>
- <div className="tabs finance-tabs">{[['transactions','تراکنش‌ها'],['installments','اقساط'],['savings','پس‌انداز']].map(([v,t])=><button key={v} className={v===financeTab?'selected':''} onClick={()=>setFinanceTab(v)}>{t}</button>)}</div>
- {financeTab==='transactions'&&<div className="cols-2 finance-layout"><Panel title="دخل و خرج" aside={<div className="panel-buttons"><select aria-label="فیلتر ماه" value={monthFilter} onChange={e=>setMonthFilter(e.target.value)}><option value="all">همه ماه‌ها</option>{knownMonths.map(m=><option key={m} value={m}>{m}</option>)}</select><button className="primary small" onClick={()=>add('transactions')}><Plus size={15}/> تراکنش</button></div>}><div className="records">{transactions.map(t=><div className="record" key={t.id}><span className={cn('tx-symbol',t.type==='income'?'positive':'negative')}>{t.type==='income'?<TrendingUp size={18}/>:<TrendingDown size={18}/>}</span><div className="grow"><strong>{t.description}</strong><small>{faDate(t.date)} · {t.category}</small></div><strong className={t.type==='income'?'good':'danger'}>{t.type==='income'?'+':'−'}{money(t.amount)}</strong><Actions onEdit={()=>edit('transactions',t)} onDelete={()=>del('transactions',t)}/></div>)}{!transactions.length&&<Empty text="تراکنشی ثبت نشده است"/>}</div></Panel><Panel title="روند ماهانه"><div className="legend"><span><i className="legend-green"/>درآمد</span><span><i className="legend-orange"/>هزینه</span></div><div className="bar-chart">{totalsByMonth.map(x=><div key={x.month} className="bar-group"><div className="bar-rails"><div title={money(x.income)} className="bar income" style={{height:(x.income/maxMonth*100)+'%'}}/><div title={money(x.expense)} className="bar expense" style={{height:(x.expense/maxMonth*100)+'%'}}/></div><small>{x.month}</small></div>)}{!totalsByMonth.length&&<Empty text="برای نمودار، تراکنش ثبت کنید"/>}</div><div className="line-item"><strong>مانده جریان نقدی ماه جاری</strong><strong className={income-expenses>=0?'good':'danger'}>{money(income-expenses)}</strong></div></Panel></div>}
+ <div className="tabs finance-tabs">{financeTabs.map(([v,t])=><button key={v} className={v===financeTab?'selected':''} onClick={()=>setFinanceTab(v)}>{t}</button>)}</div>
+ {financeTab==='transactions'&&<div className="cols-2 finance-layout"><Panel title="دخل و خرج" aside={<div className="panel-buttons"><select aria-label="فیلتر ماه" value={monthFilter} onChange={e=>setMonthFilter(e.target.value)}><option value="all">همه ماه‌ها</option>{knownMonths.map(m=><option key={m} value={m}>{monthLabel(m)}</option>)}</select><button className="primary small" onClick={()=>add('transactions')}><Plus size={15}/> تراکنش</button></div>}><div className="records">{transactions.map(t=><div className="record" key={t.id}><span className={cn('tx-symbol',t.type==='income'?'positive':'negative')}>{t.type==='income'?<TrendingUp size={18}/>:<TrendingDown size={18}/>}</span><div className="grow"><strong>{t.description}</strong><small>{faDate(t.date)} · {t.category}</small></div><strong className={t.type==='income'?'good':'danger'}>{t.type==='income'?'+':'−'}{money(t.amount)}</strong><Actions onEdit={()=>edit('transactions',t)} onDelete={()=>del('transactions',t)}/></div>)}{!transactions.length&&<Empty text="تراکنشی ثبت نشده است"/>}</div></Panel><Panel title="روند شش ماه اخیر"><div className="legend"><span><i className="legend-green"/>درآمد</span><span><i className="legend-orange"/>هزینه</span></div><div className="bar-chart">{totalsByMonth.map(x=><div key={x.month} className="bar-group"><div className="bar-rails"><div title={money(x.income)} className="bar income" style={{height:(x.income/maxMonth*100)+'%'}}/><div title={money(x.expense)} className="bar expense" style={{height:(x.expense/maxMonth*100)+'%'}}/></div><small>{monthLabel(x.month).split(' ')[0]}</small></div>)}{!totalsByMonth.length&&<Empty text="برای نمودار، تراکنش ثبت کنید"/>}</div><div className="line-item"><strong>مانده جریان نقدی ماه جاری</strong><strong className={income-expenses>=0?'good':'danger'}>{money(income-expenses)}</strong></div></Panel></div>}
+ {balanceTabs[financeTab]&&<PersonalBalances kind={financeTab} rows={data.personal_balances} {...{add,edit,del}}/>}
+ {financeTab==='bank_accounts'&&<BankAccounts rows={data.bank_accounts} {...{add,edit,del}}/>}
+ {financeTab==='report'&&<MonthlyReport months={monthlyTransactions} current={currentMonth}/>}
  {financeTab==='installments'&&<Panel title="اقساط و تعهدات" aside={<button className="primary small" onClick={()=>add('installments')}><Plus size={15}/> افزودن قسط</button>}><div className="installment-grid">{data.installments.map(x=><div className="installment" key={x.id}><div className="installment-title"><strong>{x.title}</strong><Actions onEdit={()=>edit('installments',x)} onDelete={()=>del('installments',x)}/></div><div className="installment-amount"><span>کل: {money(x.total)}</span><strong>باقیمانده: {money(Math.max(0,numeric(x.total)-numeric(x.paid)))}</strong></div><Progress value={pct(x.paid,x.total)}/><div className="installment-amount"><small>پرداخت‌شده: {money(x.paid)}</small><small>موعد: {faDate(x.due_date)}</small></div><button className="button full small" disabled={numeric(x.paid)>=numeric(x.total)} onClick={()=>pay(x)}>ثبت پرداخت قسط</button></div>)}{!data.installments.length&&<Empty text="هیچ برنامه قسطی ثبت نشده است"/>}</div></Panel>}
- {financeTab==='savings'&&<><Panel title="ترکیب پس‌انداز" aside={<button className="primary small" onClick={()=>add('holdings')}><Plus size={15}/> افزودن دارایی</button>}><div className="saving-summary"><span>جمع ارزش دارایی‌های دارای نرخ</span><strong>{noRate&&noRate===data.holdings.length?'—':money(portfolio)}</strong>{noRate>0&&<small className="warn">{fmt.format(noRate)} دارایی بدون نرخ معتبر در جمع لحاظ نشده است.</small>}
+ {financeTab==='savings'&&<><Panel title="ترکیب پس‌انداز" aside={<button className="primary small" onClick={()=>add('savings')}><Plus size={15}/> افزودن دارایی</button>}><div className="saving-summary"><span>جمع ارزش دارایی‌های دارای نرخ</span><strong>{noRate&&noRate===data.holdings.length?'—':money(portfolio)}</strong>{noRate>0&&<small className="warn">{fmt.format(noRate)} دارایی بدون نرخ معتبر در جمع لحاظ نشده است.</small>}
  {compared>0?<div className="saving-change"><span>تغییر ناشی از آخرین نوبت نرخ (مقدار ثابت، {fmt.format(compared)} دارایی)</span><strong className={priceChange>=0?'good':'danger'}>{priceChange>=0?'+':'−'}{money(Math.abs(priceChange))}</strong></div>:<small>برای محاسبه تغییر ارزش، حداقل دو نوبت نرخ معتبر لازم است.</small>}</div><div className="table-scroller"><table><thead><tr><th>دارایی</th><th>مقدار</th><th>نرخ هر واحد (تومان)</th><th>ارزش روز (تومان)</th><th>منبع نرخ</th><th>عملیات</th></tr></thead><tbody>{data.holdings.map(h=>{const a=currBy[h.asset]||{};const r=rateBy[h.asset];return <tr key={h.id}><td><span className="asset-name"><span className="asset-icon">{a.symbol||'¤'}</span><div><strong>{a.name||h.asset}</strong><small>{h.asset}</small></div></span></td><td>{fmt.format(numeric(h.quantity))} {a.unit}</td><td>{r?.price?money(r.price):'بدون نرخ'}</td><td><strong>{r?.price?money(numeric(h.quantity)*numeric(r.price)):'—'}</strong></td><td><RateSource rate={r}/></td><td><Actions onEdit={()=>edit('holdings',h)} onDelete={()=>del('holdings',h)}/></td></tr>})}</tbody></table>{!data.holdings.length&&<Empty text="برای محاسبه پس‌انداز، مقدار دلار، تتر، طلا یا ارز دیگر را ثبت کنید"/>}</div></Panel><p className="helper-text">ارقام برحسب تومان است؛ منبع نرخ‌آرا: <a href="https://nerkhara.com/" target="_blank" rel="noopener noreferrer">NerkhAra</a>. مقدار دارایی با تغییر نرخ ثابت می‌ماند. ارزش تومانی هر دارایی از «مقدار × نرخ هر واحد به تومان» به‌دست می‌آید.</p></>}
  </>
 }
 function Settings({provider,arzdigital,rateSource,username,usernameOpen,providerOpen,arzdigitalOpen,rateSourceOpen,passwordOpen,importOpen,exportData,busy}){return <div className="settings-grid"><Panel title="کلیدها و API نرخ ارز"><div className="settings-row"><span className="settings-icon"><RefreshCw size={20}/></span><div className="grow"><strong>منبع فعال نرخ‌ها</strong><p>{({nerkhara:'نرخ‌آرا (رایگان؛ بدون کلید)',arzdigital:'ارزدیجیتال (کلید اختصاصی)',navasan:'نوسان (کلید اختصاصی)'})[rateSource.selected]||'نامشخص'}</p><small>فقط منبع انتخاب‌شده نرخ‌ها را به‌روزرسانی می‌کند. نرخ دستی همیشه اولویت دارد. هنگام اختلال، نرخ قبلی با زمان واقعی حفظ می‌شود.</small></div><button className="button" onClick={rateSourceOpen}><SlidersHorizontal size={16}/> تغییر منبع</button></div><div className="settings-row"><span className="settings-icon"><Coins size={20}/></span><div className="grow"><strong>NerkhAra · نرخ‌آرا</strong><p>رایگان، بدون کلید API · هر {fmt.format(rateSource.refreshMinutes)} دقیقه در حالت منبع فعال · قیمت به تومان</p><small>ارزهای رایج، طلا، سکه و رمزارز؛ <a href="https://nerkhara.com/en/api/" target="_blank" rel="noopener noreferrer">مستندات رسمی</a> · منبع قیمت: <a href="https://nerkhara.com/" target="_blank" rel="noopener noreferrer">NerkhAra</a></small></div><span className="status status-verified">آماده استفاده</span></div><div className="settings-row"><span className="settings-icon"><KeyRound size={20}/></span><div className="grow"><strong>سرویس نرخ نوسان</strong><p>وضعیت: {provider.configured?'کلید فعال است':'کلید وارد نشده'} · واحد منبع: {provider.unit==='RIAL'?'ریال ← تبدیل به تومان':'تومان'} · هر {fmt.format(provider.refreshHours)} ساعت</p><small>کلید در دیتابیس به‌صورت رمزگذاری‌شده نگهداری می‌شود و در خروجی نمایش داده نمی‌شود.</small></div><button className="button" onClick={providerOpen}><SlidersHorizontal size={16}/> تنظیم API</button></div><div className="settings-row"><span className="settings-icon"><Coins size={20}/></span><div className="grow"><strong>API رسمی ارزدیجیتال</strong><p>وضعیت: {arzdigital.enabled?(arzdigital.configured?'فعال و دارای کلید':'فعال، کلید تنظیم نشده'):'غیرفعال'} · واحد: {arzdigital.unit==='RIAL'?'ریال → تومان':'تومان'} · هر {fmt.format(arzdigital.refreshHours)} ساعت</p><small>دریافت کلید از <a href="https://console.arzdigital.com/" target="_blank" rel="noopener noreferrer">کنسول رسمی ارزدیجیتال</a>؛ نشانی endpoint و فیلدهای JSON باید طبق مستندات سرویس تنظیم شوند. کلید در سرور رمزگذاری می‌شود و در مرورگر نمایش داده نمی‌شود.</small></div><button className="button" onClick={arzdigitalOpen}><SlidersHorizontal size={16}/> اتصال ارزدیجیتال</button></div></Panel><Panel title="امنیت حساب"><div className="settings-row"><span className="settings-icon"><KeyRound size={20}/></span><div className="grow"><strong>نام کاربری مدیر: <span dir="ltr">{username}</span></strong><p>نام کاربری با تأیید رمز فعلی قابل تغییر است.</p></div><button className="button" onClick={usernameOpen}><Pencil size={16}/> تغییر نام کاربری</button></div><div className="settings-row"><span className="settings-icon"><ShieldCheck size={20}/></span><div className="grow"><strong>رمز ورود مدیر</strong><p>نشست‌های مدیریت روی سرور کنترل می‌شوند. پس از تغییر رمز، نشست‌ها باطل می‌شوند.</p></div><button className="button" onClick={passwordOpen}><KeyRound size={16}/> تغییر رمز</button></div></Panel><Panel title="پشتیبان‌گیری و بازیابی"><div className="settings-row"><span className="settings-icon"><Database size={20}/></span><div className="grow"><strong>پشتیبان JSON اطلاعات</strong><p>خروجی وظایف، سرورها، تراکنش‌ها، ارزها، منابع و یادداشت‌ها؛ بدون کلیدهای API و توکن‌ها.</p></div><div className="settings-buttons"><button className="button" onClick={exportData}><Download size={16}/> دریافت</button><button className="button" disabled={busy} onClick={importOpen}><Upload size={16}/> ورود اطلاعات</button></div></div><p className="helper-text">برای پشتیبان کامل PostgreSQL از ابزار pg_dump استفاده کنید. قابلیت واردکردن JSON برای انتقال داده‌های برنامه طراحی شده است.</p></Panel><Panel title="نصب به‌عنوان وب‌اپ"><div className="settings-row"><span className="settings-icon"><LayoutDashboard size={20}/></span><div className="grow"><strong>برنامه قابل نصب (PWA)</strong><p>روی موبایل یا دسکتاپ از گزینه «افزودن به صفحه اصلی» یا «Install app» در مرورگر استفاده کنید.</p><small>ساختار برنامه در حالت آفلاین ممکن است باز شود، اما مشاهده و ویرایش داده‌ها به اتصال سرور نیاز دارد.</small></div></div></Panel><Panel title="دیتابیس و استقرار"><div className="settings-row"><span className="settings-icon"><Database size={20}/></span><div className="grow"><strong>PostgreSQL + Docker Compose</strong><p>داده‌های عملیاتی در جداول رابطه‌ای SQL و روی volume مستقل PostgreSQL ذخیره می‌شوند.</p><small>دامنه و HTTPS توسط Caddy مدیریت می‌شوند.</small></div></div></Panel></div>}
+function PersonalBalances({kind,rows,add,edit,del}){
+ const items=rows.filter(row=>row.direction===kind);
+ const open=items.reduce((sum,row)=>sum+ledgerCents(row.total)-ledgerCents(row.settled),0n);
+ const today=todayInTehran();
+ return <Panel title={balanceTabs[kind]} aside={<button className="primary small" onClick={()=>add(kind)}><Plus size={15}/> ثبت مورد جدید</button>}>
+  <div className="line-item"><span>جمع مانده</span><strong>{ledgerMoney(open)}</strong></div>
+  {items.length?<div className="table-scroller"><table>
+   <thead><tr><th>طرف حساب</th><th>مبلغ کل</th><th>تسویه‌شده</th><th>مانده</th><th>سررسید</th><th>عملیات</th></tr></thead>
+   <tbody>{items.map(row=>{
+    const outstanding=ledgerCents(row.total)-ledgerCents(row.settled);
+    const overdue=outstanding>0&&row.due_date&&dateOnly(row.due_date)<today;
+    return <tr key={row.id}>
+     <td><strong>{row.title}</strong>{row.notes&&<small className="ledger-note">{row.notes}</small>}</td>
+     <td>{accountingMoney(row.total)}</td><td>{accountingMoney(row.settled)}</td><td>{outstanding?ledgerMoney(outstanding):'تسویه‌شده'}</td>
+     <td className={overdue?'danger':undefined}>{faDate(row.due_date)}{overdue&&<small className="ledger-note">گذشته از سررسید</small>}</td>
+     <td><Actions onEdit={()=>edit('personal_balances',row)} onDelete={()=>del('personal_balances',row)}/></td>
+    </tr>;
+   })}</tbody>
+  </table></div>:<Empty text="موردی ثبت نشده است"/>}
+  <p className="helper-text">مبلغ تسویه را در فرم ویرایش به‌روز کنید. برای درج در گزارش ماهانه، دریافت یا پرداخت را در تراکنش‌ها ثبت کنید.</p>
+ </Panel>;
+}
+function BankAccounts({rows,add,edit,del}){
+ const total=rows.reduce((sum,row)=>sum+ledgerCents(row.balance),0n);
+ return <Panel title="حساب‌های بانکی" aside={<button className="primary small" onClick={()=>add('bank_accounts')}><Plus size={15}/> افزودن حساب</button>}>
+  <div className="line-item"><span>جمع مانده‌های ثبت‌شده</span><strong>{ledgerMoney(total)}</strong></div>
+  {rows.length?<div className="table-scroller"><table>
+   <thead><tr><th>عنوان حساب</th><th>بانک</th><th>مانده دستی</th><th>عملیات</th></tr></thead>
+   <tbody>{rows.map(row=><tr key={row.id}><td><strong>{row.title}</strong>{row.notes&&<small className="ledger-note">{row.notes}</small>}</td>
+    <td>{row.bank}</td><td>{accountingMoney(row.balance)}</td>
+    <td><Actions onEdit={()=>edit('bank_accounts',row)} onDelete={()=>del('bank_accounts',row)}/></td></tr>)}</tbody>
+  </table></div>:<Empty text="حساب بانکی ثبت نشده است"/>}
+  <p className="helper-text">مانده هر حساب به‌صورت دستی ثبت و به‌روز می‌شود.</p>
+ </Panel>;
+}
+function MonthlyReport({months,current}){
+ const currentKey=monthId(current),previousKey=monthId(changeMonth(current.year,current.month,-1));
+ const [selection,setSelected]=useState(previousKey);
+ const options=[...new Set([currentKey,previousKey,...months.keys()])].sort().reverse();
+ const selected=options.includes(selection)?selection:previousKey;
+ const {income,expense,installment,rows}=months.get(selected)||emptyMonth;
+ const outflow=expense+installment;
+ const byCategory=new Map();
+ for(const row of rows){
+  if(row.type==='income')continue;
+  byCategory.set(row.category,(byCategory.get(row.category)||0)+numeric(row.amount));
+ }
+ const categories=[...byCategory].sort((a,b)=>b[1]-a[1]);
+ return <Panel title="گزارش پایان ماه" aside={<div className="panel-buttons"><select aria-label="ماه گزارش" value={selected} onChange={e=>setSelected(e.target.value)}>
+  {options.map(key=><option key={key} value={key}>{monthLabel(key)}{key===currentKey?' (ماه جاری)':''}</option>)}
+ </select></div>}>
+  {selected===currentKey&&<p className="helper-text">ماه جاری هنوز به پایان نرسیده است.</p>}
+  <dl className="ledger-summary">
+   {[['درآمد',income],['هزینه',expense],['پرداخت اقساط',installment],['جمع خروجی',outflow],['خالص جریان نقدی',income-outflow]].map(([label,amount])=><div key={label}><dt>{label}</dt><dd>{accountingMoney(amount)}</dd></div>)}
+   <div><dt>تعداد تراکنش‌ها</dt><dd>{fmt.format(rows.length)}</dd></div>
+  </dl>
+  {categories.length>0&&<section className="ledger-chart"><h3>خروجی نقدی به تفکیک دسته</h3>
+   {categories.map(([label,amount])=><div className="ledger-chart-row" key={label}>
+    <span>{label}</span><strong>{accountingMoney(amount)}</strong>
+    <div className="ledger-track" aria-hidden="true"><div style={{width:pct(amount,outflow)+'%'}}/></div>
+   </div>)}
+  </section>}
+  {!rows.length&&<Empty text="تراکنشی در این ماه ثبت نشده است"/>}
+ </Panel>;
+}
+
 const OPT={status:[['todo','شروع نشده'],['progress','در حال انجام'],['review','نیازمند بررسی'],['done','انجام‌شده']],priority:[['low','کم'],['medium','متوسط'],['high','زیاد']],category:[['work','کاری'],['personal','شخصی'],['server','سرور'],['class','آموزش و کلاس'],['finance','مالی']],environment:[['production','Production'],['staging','Staging'],['development','Development'],['other','سایر']],mode:[['manual','ثبت دستی'],['agent','عامل پایش']],type:[['expense','هزینه'],['income','درآمد'],['installment','پرداخت قسط']],verified:[['false','تأیید نشده'],['true','تأیید شده']],unit:[['RIAL','ریال (تقسیم خودکار بر ۱۰)'],['TOMAN','تومان']],resourceStatus:[['pending','در انتظار بررسی'],['verified','معتبر و بررسی‌شده'],['broken','نامعتبر'],['review','نیازمند بررسی']]};
 const F=(name,label,type='text',extra={})=>({name,label,type,...extra});
-function editorFields(kind,item,data,extras,provider,arzdigital,rateSource){const it=item||{},date=new Date(Date.now()-new Date().getTimezoneOffset()*60000).toISOString().slice(0,10);switch(kind){
+function editorFields(kind,item,data,extras,provider,arzdigital,rateSource){const it=item||{},date=todayInTehran();switch(kind){
  case 'tasks':return [F('title','عنوان کار','text',{required:true,maxLength:180}),F('category','دسته‌بندی','select',{options:OPT.category,defaultValue:'work'}),F('status','وضعیت','select',{options:OPT.status,defaultValue:'todo'}),F('priority','اولویت','select',{options:OPT.priority,defaultValue:'medium'}),F('due_date','موعد انجام','date'),F('class_id','کلاس مرتبط','select',{options:[['','بدون کلاس'],...data.classes.map(c=>[c.id,c.title])],defaultValue:''}),F('notes','یادداشت','textarea')];
  case 'servers':return [F('name','نام سرور','text',{required:true}),F('host','آدرس / IP','text'),F('environment','محیط','select',{options:OPT.environment,defaultValue:'production'}),F('mode','روش ثبت منابع','select',{options:OPT.mode,defaultValue:'manual'}),F('notes','توضیحات سرور','textarea')];
  case 'transactions':return [F('type','نوع تراکنش','select',{options:OPT.type,defaultValue:'expense'}),F('amount','مبلغ به تومان','number',{required:true,min:'0.01',step:'any'}),F('date','تاریخ','date',{required:true,defaultValue:date}),F('category','گروه هزینه یا درآمد','text',{defaultValue:'عمومی'}),F('description','شرح تراکنش','text',{required:true})];
  case 'installments':return [F('title','عنوان تعهد / قسط','text',{required:true}),F('total','کل تعهد (تومان)','number',{required:true,min:'0',step:'any'}),F('paid','مبلغ پرداخت‌شده تا امروز','number',{min:'0',step:'any',defaultValue:'0'}),F('monthly','مبلغ هر قسط','number',{min:'0',step:'any',defaultValue:'0'}),F('due_date','سررسید بعدی','date'),F('notes','توضیحات','textarea')];
+ case 'personal_balances':return [
+  F('direction','نوع','select',{options:Object.entries(balanceTabs),defaultValue:'debt'}),
+  F('title','نام طرف حساب یا عنوان','text',{required:true,maxLength:180}),
+  F('total','مبلغ کل (تومان)','number',{required:true,min:'0.01',step:'0.01'}),
+  F('settled','مبلغ تسویه‌شده (تومان)','number',{required:true,min:'0',step:'0.01',defaultValue:'0'}),
+  F('due_date','سررسید','date'),F('notes','یادداشت','textarea')
+ ];
+ case 'bank_accounts':return [
+  F('title','عنوان حساب','text',{required:true,maxLength:120}),F('bank','نام بانک','text',{required:true,maxLength:120}),
+  F('balance','مانده دستی (تومان)','number',{required:true,step:'0.01',defaultValue:'0'}),F('notes','یادداشت','textarea')
+ ];
  case 'holdings':return [F('asset','نوع دارایی','select',{options:data.currencies.filter(c=>c.is_visible!==false||c.code===it.asset||c.code==='TOMAN').map(c=>[c.code,c.symbol+' · '+c.name+' ('+c.unit+')']),defaultValue:'TOMAN'}),F('quantity','مقدار دارایی','number',{required:true,min:'0',step:'any'}),F('note','توضیحات دارایی','textarea')];
  case 'currencies':return [F('code','کد ارز (مثلاً CHF)','text',{required:!item,maxLength:12,disabled:!!item,defaultValue:it.code||''}),F('name','نام ارز یا دارایی','text',{required:true}),F('symbol','نماد (مثل € یا ₿)','text',{required:true,maxLength:16}),F('unit','واحد دارایی','text',{required:true,defaultValue:'واحد'}),F('navasan_code','کد نماد نوسان (اختیاری)','text'),F('arzdigital_code','نماد ارزدیجیتال (اختیاری؛ مثل BTC یا USD)','text',{maxLength:32}),F('nerkhara_id','شناسه نرخ‌آرا (اختیاری؛ مانند gold-18k یا usd)','text',{maxLength:48,placeholder:'gold-18k'}),F('manual_toman','قیمت هر واحد به تومان','number',{step:'any',min:'0'})];
  case 'classes':return [F('title','عنوان کلاس','text',{required:true,maxLength:200}),F('description','توضیح کلاس','textarea'),F('status','وضعیت','select',{options:OPT.status,defaultValue:'todo'}),F('notes','یادداشت','textarea')];
@@ -191,7 +311,7 @@ function editorFields(kind,item,data,extras,provider,arzdigital,rateSource){cons
  case 'import':return [F('file','محتوای فایل JSON پشتیبان','import')];
  default:return [];
 }}
-const titleKind={tasks:'کار',servers:'سرور',transactions:'تراکنش',installments:'قسط',holdings:'دارایی',currencies:'ارز و نماد',classes:'کلاس',chapters:'فصل کلاس',topics:'مبحث',resources:'منبع',metrics:'مصرف منابع',agent:'عامل پایش',payment:'پرداخت قسط',provider:'تنظیمات API نوسان',arzdigital:'تنظیمات API ارزدیجیتال',rateSource:'انتخاب منبع نرخ ارز',username:'تغییر نام کاربری',password:'تغییر رمز',import:'بازیابی اطلاعات'};
+const titleKind={personal_balances:'بدهی یا طلب',bank_accounts:'حساب بانکی',tasks:'کار',servers:'سرور',transactions:'تراکنش',installments:'قسط',holdings:'دارایی',currencies:'ارز و نماد',classes:'کلاس',chapters:'فصل کلاس',topics:'مبحث',resources:'منبع',metrics:'مصرف منابع',agent:'عامل پایش',payment:'پرداخت قسط',provider:'تنظیمات API نوسان',arzdigital:'تنظیمات API ارزدیجیتال',rateSource:'انتخاب منبع نرخ ارز',username:'تغییر نام کاربری',password:'تغییر رمز',import:'بازیابی اطلاعات'};
 function Editor({config,data,provider,arzdigital,rateSource,close,busy,save}){
  const {kind,item,extras}=config;const fields=editorFields(kind,item,data,extras,provider,arzdigital,rateSource);const [vals,setVals]=useState(()=>Object.fromEntries(fields.map(f=>{const v=item?.[f.name]??extras?.[f.name]??(f.name==='due_date'?item?.dueDate:null)??f.defaultValue??(f.type==='checkbox'?false:'');return [f.name,f.type==='date'?dateOnly(v):f.name==='verified'?String(v):v]})));const [importing,setImporting]=useState(false),[localErr,setLocalErr]=useState('');
  const change=(k,v)=>setVals(cur=>({...cur,[k]:v}));

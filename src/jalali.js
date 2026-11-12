@@ -35,3 +35,31 @@ export function todayInTehran(date=new Date()){
  const fields=Object.fromEntries(tehranDate.formatToParts(date).map(({type,value})=>[type,value]));
  return `${fields.year}-${fields.month}-${fields.day}`;
 }
+
+// Holiday dates are stored by Persian year because lunar observances move.
+// https://taghvimshamsi.ir/holidays/1405/
+// https://makanet.ir/time/holidays/1406/ (official list of 27 dates; see README)
+const fixedHolidays={
+ 101:'نوروز',102:'نوروز',103:'نوروز',104:'نوروز',112:'روز جمهوری اسلامی',113:'روز طبیعت',
+ 314:'رحلت امام خمینی',315:'قیام ۱۵ خرداد',1122:'پیروزی انقلاب اسلامی',1229:'ملی‌شدن صنعت نفت'
+};
+const movableHolidays={
+ 1405:{
+  101:'عید فطر',102:'تعطیلی عید فطر',125:'شهادت امام صادق (ع)',
+  306:'عید قربان',314:'عید غدیر',403:'تاسوعا',404:'عاشورا',
+  513:'اربعین',521:'رحلت پیامبر (ص) و شهادت امام حسن (ع)',522:'شهادت امام رضا (ع)',530:'شهادت امام حسن عسکری (ع)',
+  608:'میلاد پیامبر (ص) و امام صادق (ع)',822:'شهادت حضرت زهرا (س)',
+  1002:'میلاد امام علی (ع)',1016:'مبعث',1104:'نیمهٔ شعبان',1209:'شهادت امام علی (ع)',1219:'عید فطر',1220:'تعطیلی عید فطر'
+ },
+ 1406:{
+  114:'شهادت امام صادق (ع)',227:'عید قربان',304:'عید غدیر',325:'تاسوعا',326:'عاشورا',
+  503:'اربعین',511:'رحلت پیامبر (ص) و شهادت امام حسن (ع)',512:'شهادت امام رضا (ع)',
+  520:'شهادت امام حسن عسکری (ع)',529:'میلاد پیامبر (ص) و امام صادق (ع)',812:'شهادت حضرت زهرا (س)',
+  921:'میلاد امام علی (ع)',1005:'مبعث',1023:'نیمهٔ شعبان',1129:'شهادت امام علی (ع)',1208:'عید فطر',1209:'تعطیلی عید فطر'
+ }
+};
+export const hasAnnualHolidays=year=>Object.hasOwn(movableHolidays,year);
+export function holidayName(year,month,day){
+ const key=month*100+day;
+ return [fixedHolidays[key],movableHolidays[year]?.[key]].filter(Boolean).join('، ');
+}

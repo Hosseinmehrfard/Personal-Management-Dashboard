@@ -20,3 +20,18 @@
 .update-banner{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:16px}
 
 .overview-rate-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+
+.finance-tabs{flex-wrap:wrap}
+.ledger-note{display:block;white-space:pre-wrap;overflow-wrap:anywhere;color:var(--muted)}
+.ledger-summary{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin:16px 0}
+.ledger-summary>div{padding:12px 14px;border:1px solid var(--line);border-radius:10px}
+.ledger-summary dt{color:#53697e}
+.ledger-summary dd{margin:3px 0 0;font-size:16px;font-weight:700}
+.ledger-chart{display:grid;gap:12px;margin-block:18px}
+.ledger-chart h3{margin:0}
+.ledger-chart-row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:4px 12px;overflow-wrap:anywhere}
+.ledger-track{grid-column:1/-1;background:#f1f4f7;height:9px;border-radius:8px;overflow:hidden}
+.ledger-track>div{height:100%;background:#c76b37;border-radius:inherit}
+.jalali-day.holiday{color:#9e3434;background:#fff1f0}
+.jalali-day.holiday.picked{border-color:#9e3434;background:#fce0dd}
+.jalali-holiday{font-size:.8em;line-height:1.4;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
