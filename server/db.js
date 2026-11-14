@@ -124,6 +124,15 @@ export async function migrate(){
    await c.query(`CREATE INDEX IF NOT EXISTS "idx_${index}" ON "${table}"("${column}")`);
   }
   await c.query('INSERT INTO schema_migrations(version) VALUES(7) ON CONFLICT DO NOTHING');
+  // v6.5: Account-scoped UI choices. Financial values remain stored in TOMAN.
+  await c.query(`CREATE TABLE IF NOT EXISTS user_ui_preferences(
+    user_id text PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+    language text NOT NULL DEFAULT 'fa' CHECK(language IN ('fa','en')),
+    theme text NOT NULL DEFAULT 'light' CHECK(theme IN ('light','dark')),
+    currency text NOT NULL DEFAULT 'TOMAN' CHECK(currency IN ('TOMAN','RIAL','USD','USDT','EUR')),
+    updated_at timestamptz NOT NULL DEFAULT now()
+  )`);
+  await c.query('INSERT INTO schema_migrations(version) VALUES(8) ON CONFLICT DO NOTHING');
 
   const initialOwner=(await c.query(`SELECT id FROM users WHERE role='admin' ORDER BY created_at LIMIT 1`)).rows[0]?.id;
   if(initialOwner)await claimLegacy(c,initialOwner);

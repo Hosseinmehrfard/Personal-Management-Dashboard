@@ -1,3 +1,5 @@
+> **v6.5:** refined mobile-first UI, Persian/English interface, light/dark modes and five display currencies. See `CHANGELOG-v6.5-fa.md`.
+
 # پنل مدیریت شخصی | Personal Management Dashboard
 
 وب‌اپ فارسی و راست‌به‌چپ برای مدیریت مستقل وظایف، سرورها، امور مالی، دارایی‌ها و کلاس‌های آموزشی. ساخته‌شده با React، Node.js/Express، PostgreSQL و PWA؛ قابل اجرا با Docker Compose و HTTPS از طریق Caddy.

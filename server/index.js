@@ -278,6 +278,22 @@ app.put('/api/currencies/:code/visibility',wrap(async(req,res)=>{
  await query(`INSERT INTO user_currency_preferences(user_id,code,visible) VALUES($1,$2,$3) ON CONFLICT(user_id,code) DO UPDATE SET visible=EXCLUDED.visible`,[req.session.user_id,code,req.body.visible]);
  res.json({ok:true});
 }));
+// Preferences apply to the authenticated user only; never reinterpret legacy TOMAN amounts.
+app.get('/api/settings/interface',wrap(async(req,res)=>{
+ const row=(await query('SELECT language,theme,currency FROM user_ui_preferences WHERE user_id=$1',[req.session.user_id])).rows[0];
+ res.json(row||{language:'fa',theme:'light',currency:'TOMAN'});
+}));
+app.put('/api/settings/interface',wrap(async(req,res)=>{
+ const body=req.body||{};
+ const language=allow(body.language,['fa','en'],'fa');
+ const theme=allow(body.theme,['light','dark'],'light');
+ const currency=allow(body.currency,['TOMAN','RIAL','USD','USDT','EUR'],'TOMAN');
+ const updated=await query(`INSERT INTO user_ui_preferences(user_id,language,theme,currency)
+ VALUES($1,$2,$3,$4) ON CONFLICT(user_id) DO UPDATE SET
+ language=EXCLUDED.language,theme=EXCLUDED.theme,currency=EXCLUDED.currency,updated_at=now()
+ RETURNING language,theme,currency`,[req.session.user_id,language,theme,currency]);
+ res.json(updated.rows[0]);
+}));
 app.get('/api/dashboard',wrap(async(req,res)=>res.json(await dashboard(req.session.user_id))));
 registerSharedRoutes(app,{wrap,fail,tx,query,randomUUID,logActivity,idOf,val,dateOf,ledgerAmount,amountInCents,assertOwnedReference});
 for(const kind of Object.keys(TYPES)){

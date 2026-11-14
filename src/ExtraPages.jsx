@@ -1,10 +1,11 @@
 import React,{useEffect,useState} from 'react';
 import {Plus,Pencil,Trash2,Users,ShieldCheck,CalendarDays,ChevronRight,ChevronLeft,RefreshCw,BookOpen,Link2,ListTodo,Check,Eye,EyeOff,Save,KeyRound,CloudDownload,ExternalLink,Coins,ArrowLeft} from 'lucide-react';
+import {formatMoney as uiMoney} from './uiPreferences.js';
 import {persianParts,toIsoJalali,daysInMonth,weekPosition,changeMonth,monthNames,weekdays,formatJalali,todayInTehran,holidayName,hasAnnualHolidays} from './jalali.js';
 
 const format=new Intl.NumberFormat('fa-IR',{maximumFractionDigits:2});
 const formatYear=new Intl.NumberFormat('fa-IR',{useGrouping:false});
-const formatMoney=n=>new Intl.NumberFormat('fa-IR',{maximumFractionDigits:0}).format(Number(n)||0)+' تومان';
+const formatMoney=n=>uiMoney(n);
 function Box({title,aside,children}){return <section className="panel"><div className="panel-head"><h2>{title}</h2>{aside}</div>{children}</section>}
 function Notice({children}){return <p className="helper-text">{children}</p>}
 export function JalaliCalendarGrid({year,month,selected,onSelect,items=[]}){
