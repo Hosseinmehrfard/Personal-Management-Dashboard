@@ -1,0 +1,208 @@
+/* v6.6 — Original responsive finance workspace informed by two visual references.
+   No decorative account numbers, invented financial performance, or fake alerts. */
+:root{--ui-bg:#f2f4f5;--ui-card:#fff;--ui-ink:#1e252c;--ui-muted:#818b95;--ui-stroke:#e8eaec;--ui-accent:#087c84;--ui-raise:0 7px 22px #222f3610}
+body{background:var(--ui-bg)}
+.app-overview{background:radial-gradient(ellipse at 78% -20%,#dff3f4 0%,transparent 48%),radial-gradient(ellipse at 0 80%,#eaf8f3 0%,transparent 35%),var(--ui-bg);min-height:100vh}
+.app-overview .workspace{background:transparent}
+/* Narrow icon rail on desktop, with native title tooltips and full navigation on smaller widths. */
+@media(min-width:901px){
+ .app-overview .sidebar{width:86px;align-items:center;padding:21px 10px 17px;background:transparent;border-inline-end:1px solid #e0e9e9;color:#2a3538}
+ .app-overview .brand{padding:0 0 36px;justify-content:center;width:100%}
+ .app-overview .brand .logo{width:48px;height:48px;border-radius:15px;background:#232a2e;color:#fff;box-shadow:none;font-size:25px}
+ .app-overview .brand>div,.app-overview .sidebar .nav-label,.app-overview .sidebar .nav-link>span,.app-overview .sidebar .nav-link>em,.app-overview .sidebar-bottom>div,.app-overview .sidebar-bottom>.good,.app-overview .sidebar-bottom>.danger{display:none}
+ .app-overview .sidebar nav{display:flex;flex-direction:column;align-items:center;gap:8px;width:100%}
+ .app-overview .sidebar .nav-link{justify-content:center;align-items:center;display:flex;padding:0;width:47px;height:47px;min-height:47px;border:1px solid transparent;background:#fff;color:#566a71;border-radius:15px;box-shadow:0 2px 10px #24323a08;margin:0}
+ .app-overview .sidebar .nav-link:hover{background:#e2f3f0;color:#0d7e7d}
+ .app-overview .sidebar .nav-link.active{color:#fff;background:#212a2f;box-shadow:none;border-color:#212a2f}
+ .app-overview .sidebar-bottom{padding:15px 0 0;justify-content:center;width:100%;border-color:#dce5e5}
+ .app-overview .sidebar-bottom .avatar{border-radius:50%;width:43px;height:43px;background:#e5f3f0;color:#0a7873}
+ .app-overview .main{max-width:1700px;padding:34px clamp(20px,3.25vw,55px) 80px}
+ .app-overview .topbar{background:transparent;box-shadow:none;border:0;height:79px}
+ .app-overview .topbar .header-actions{gap:9px}
+}
+.app-overview .heading.overview-heading{display:none}
+.dashboard-home{--dash-ink:var(--ui-ink);--dash-muted:var(--ui-muted);--dash-edge:var(--ui-stroke);--dash-canvas:var(--ui-card);--dash-frost:#f5f8f8;max-width:none}
+.dash-intro{margin:0 0 22px;align-items:center}
+.dash-intro .dash-overline{color:#81989a;font-weight:800;font-size:10px;letter-spacing:1.4px}
+.dash-intro h2{font-size:clamp(24px,2.4vw,36px);letter-spacing:-1.3px;font-weight:800;line-height:1.28;color:var(--ui-ink)}
+.dash-intro p{font-size:12px;margin:8px 0 0;color:var(--ui-muted)}
+.dash-customize{border:1px solid var(--ui-stroke);background:var(--ui-card);border-radius:999px;min-height:42px;padding:9px 17px;color:var(--ui-ink);box-shadow:var(--ui-raise)}
+.dash-section-title{margin-bottom:10px;align-items:center}.dash-section-title h2{font-size:14px;font-weight:800;color:var(--ui-ink)}
+.dash-overline{font-weight:750;letter-spacing:.1px;color:#51898c}
+/* Market stays above the dashboard. Tighter cards avoid competing with the balance hero. */
+.dash-market{margin:0 0 21px}.dash-market-note{font-size:9px;color:var(--ui-muted);padding-top:4px}
+.dash-market-scroller{gap:10px;padding:1px 0 8px;scroll-padding-inline:6px}
+.dash-rate-card{flex:0 0 clamp(170px,15vw,210px);border:1px solid var(--ui-stroke);border-radius:17px;padding:11px 13px;box-shadow:0 2px 13px #172f3506;background:var(--ui-card)}
+.dash-rate-heading{gap:8px}.dash-currency-art,.dash-currency-fallback{height:36px;width:36px;border-radius:12px}.dash-rate-label strong{font-size:11px}.dash-rate-label small{font-size:9px;color:var(--ui-muted)}
+.dash-rate-price{font-size:17px;margin:5px 0 1px;letter-spacing:-.2px;line-height:1.7}.dash-rate-foot{font-size:9px;min-height:19px}
+.dash-text-button{font-size:11px}
+/* A deliberate editorial grid: main chart + accounts, small summary, four analysis tiles. */
+.dash-modules{grid-template-columns:repeat(12,minmax(0,1fr));gap:16px;align-items:stretch}
+.dash-module{grid-column:span 12}
+.dash-module-hero{grid-column:span 8;min-width:0}.dash-module-accounts{grid-column:span 4;min-width:0}
+.dash-module-actions{grid-column:span 12}
+.dash-module-stats{grid-column:span 12}
+.dash-module-charts{grid-column:span 12}
+.dash-module-goals,.dash-module-health,.dash-module-alerts{grid-column:span 4}
+.dash-module-calendar,.dash-module-tasks,.dash-module-servers{grid-column:span 4}
+.dash-panel,.dash-sum{background:var(--ui-card);border:1px solid var(--ui-stroke);border-radius:24px;box-shadow:var(--ui-raise);overflow:hidden}
+.dash-panel>header{border:0;padding:20px 22px 4px;min-height:55px}.dash-panel>header h2{font-size:15px;color:var(--ui-ink)}
+.dash-panel-icon{background:#eff7f6;color:#0b7c82;border-radius:12px;width:37px;height:37px}
+.dash-panel-body{padding:10px 22px 22px}
+/* Hero surface: numbers first, real income/expense series below, no fabricated trend. */
+.dash-module-hero .dash-hero{min-height:417px}
+.dash-hero{display:flex;flex-direction:column;background:var(--ui-card);border:1px solid var(--ui-stroke);color:var(--ui-ink);border-radius:27px;box-shadow:var(--ui-raise);overflow:hidden;position:relative}
+.dash-hero::before{display:none}
+.dash-hero-main{padding:24px 28px 3px;position:relative}
+.dash-hero-top{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.dash-hero-kicker{display:inline-flex;align-items:center;gap:8px;color:#46515a;font-size:12px;font-weight:800}
+.dash-hero-dot{width:8px;height:8px;background:#06918c;box-shadow:0 0 0 4px #14a79b1a}
+.dash-hero-time{display:inline-flex;align-items:center;gap:5px;font-size:10px;color:var(--ui-muted)}
+.dash-hero-balance-label{margin:20px 0 3px;font-size:11px;color:var(--ui-muted)}
+.dash-hero-balance{font-size:clamp(25px,2.6vw,39px);font-weight:800;line-height:1.3;color:var(--ui-ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-height:43px;text-align:start}
+.dash-hero-footline{display:flex;align-items:center;gap:9px;color:var(--ui-muted);font-size:10px;margin-top:9px}
+.dash-hero-positive,.dash-hero-negative{border-radius:7px;padding:4px 7px;display:inline-flex;align-items:center;gap:2px;font-size:10px;background:#eef9f5;color:#087b6c;font-weight:800}
+.dash-hero-negative{background:#fff0ec;color:#bf6859}
+.dash-hero-new{position:absolute;inset-inline-end:28px;bottom:12px;background:#1c3137;color:white;border:0;border-radius:99px;min-height:38px;padding:7px 14px;font-size:11px}.dash-hero-new:hover{background:#0a7277;color:white}
+.dash-hero-chart{flex:1;display:flex;flex-direction:column;min-height:205px;justify-content:flex-start;border:0;background:transparent;padding:13px 22px 18px;color:var(--ui-ink)}
+.dash-hero-chart-head{color:var(--ui-ink);font-size:11px;gap:10px}
+.dash-hero-legend{display:flex;align-items:center;gap:13px;color:var(--ui-muted);font-size:10px;font-weight:500}.dash-hero-legend span{display:flex;align-items:center;gap:5px}
+.dash-hero-legend i{display:block;width:9px;height:9px;border-radius:99px}.dash-hero-legend i.income{background:#078b93}.dash-hero-legend i.expense{background:#edb2a6}
+.dash-hero-graph{position:relative;flex:1}.dash-hero-graph svg{width:100%;height:177px;color:var(--ui-muted);display:block}.dash-hero-months{display:flex;justify-content:space-between;padding:0 13px;gap:3px;color:var(--ui-muted);font-size:10px}
+.dash-hero-empty{position:absolute;inset:25px 0 25px;display:grid;place-items:center;color:var(--ui-muted);font-size:11px}
+/* Two honest account snapshots styled after the card metaphor: no fake payment processor. */
+.dash-module-accounts .dash-panel{height:100%;display:flex;flex-direction:column}
+.dash-module-accounts .dash-panel-body{flex:1}
+.dash-bank-block{height:100%;display:flex;flex-direction:column;justify-content:space-between;gap:12px}
+.dash-bank-cards{display:flex;flex-direction:column;gap:10px}
+.dash-visual-account{min-height:123px;border-radius:19px;background:linear-gradient(125deg,#d9f7ef,#b7e6dc);color:#234b48;padding:13px 16px;position:relative;display:flex;flex-direction:column;gap:5px;overflow:hidden}
+.dash-visual-account::after{content:'';position:absolute;inset-inline-end:-45px;bottom:-100px;width:180px;height:180px;border-radius:50%;border:1px solid #ffffff4d;box-shadow:0 0 0 20px #fff2,0 0 0 42px #fff1;pointer-events:none}
+.dash-visual-account-1{background:linear-gradient(135deg,#273f44,#192b34);color:#eefaf5}
+.dash-visual-account-top{display:flex;justify-content:space-between;align-items:center;font-size:11px;font-weight:800}
+.dash-visual-account-title{font-size:10px;opacity:.82}.dash-visual-account strong{font-size:clamp(12px,1.1vw,17px);font-weight:800;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;position:relative;z-index:1}
+.dash-visual-account-bottom{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:auto;font-size:10px;opacity:.85}
+.dash-visual-account-bottom svg{height:24px;width:88px;color:inherit;flex:none}
+.dash-bank-empty{min-height:260px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:9px;color:var(--ui-muted);text-align:center;padding:25px 14px}.dash-bank-empty strong{font-size:13px;color:var(--ui-ink)}.dash-bank-empty small{font-size:11px;line-height:1.75}
+.dash-bank-actions{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:9px}
+.dash-bank-actions button{border:0;background:#f4f7f7;color:#4c6266;border-radius:14px;min-height:58px;display:flex;gap:5px;flex-direction:column;justify-content:center;align-items:center;font-size:10px;font-weight:750;cursor:pointer}
+.dash-bank-actions button:hover{background:#e2f3ef;color:#087b81}
+.dash-quick-actions{display:flex;gap:10px;justify-content:flex-start;padding:0 0 2px;overflow-x:auto}
+.dash-action{border-radius:99px;min-height:44px;padding:6px 14px;background:var(--ui-card);box-shadow:none;color:var(--ui-ink);border:1px solid var(--ui-stroke)}
+.dash-action>span{background:#f1f5f4;border-radius:50%;width:29px;height:29px;color:#0f7980}.dash-action-primary{background:#182f34;color:#fff;border-color:#182f34}.dash-action-primary>span{background:#ffffff20;color:#fff}
+.dash-summary-grid{grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}
+.dash-sum{min-height:108px;border-radius:20px;padding:13px 17px;box-shadow:0 3px 15px #222f3607}
+.dash-sum-top{margin-bottom:6px}.dash-sum>strong{font-size:clamp(14px,1.35vw,19px);font-weight:800;line-height:1.6}
+.dash-sum:nth-child(4n+1){background:#eeefff}.dash-sum:nth-child(4n+2){background:#e6f6fc}.dash-sum:nth-child(4n+3){background:#e9f7f1}.dash-sum:nth-child(4n+4){background:#fff0e9}
+.dash-sum-top>span:first-child{color:#5f747e}.dash-sum-icon{width:31px;height:31px;background:#ffffffa0;color:#385c67;border-radius:10px}
+.dash-charts-grid{grid-template-columns:1.15fr .85fr;gap:16px}.dash-donut{width:155px;height:155px;flex-basis:155px}.dash-donut::before{inset:22px}
+/* Goals, health and upcoming resemble independent mobile-first summary tiles. */
+.dash-goals{gap:16px}.dash-goal-heading strong{font-size:12px}.dash-goal-heading small{font-size:10px;color:var(--ui-muted)}
+.dash-goal-heading>b{font-size:14px;color:#087f88}
+.dash-progress{height:6px;background:#e8eeed}.dash-progress span{background:#087e86}
+.dash-health{display:flex;flex-direction:column;align-items:center;gap:11px;min-height:235px}
+.dash-health-gauge{width:190px;height:104px;position:relative;overflow:hidden;display:flex;align-items:flex-end;justify-content:center}
+.dash-health-gauge::before{content:'';position:absolute;width:174px;height:174px;top:4px;left:8px;border-radius:50%;background:conic-gradient(from 270deg at 50% 50%,var(--health-color) 0 var(--health-value),#e8efec var(--health-value) 100%);mask:radial-gradient(circle,transparent 0 65px,#000 66px 75px,transparent 76px);clip-path:inset(0 0 50% 0)}
+.dash-health-gauge>div{z-index:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:0;margin-bottom:1px}.dash-health-gauge strong{font-size:26px;color:var(--ui-ink)}.dash-health-gauge small{font-size:10px;color:var(--ui-muted)}
+.dash-health-metrics{width:100%;display:flex;justify-content:space-between;gap:14px;align-items:start}
+.dash-health-metrics>div{display:flex;flex-direction:column;gap:4px;min-width:0}.dash-health-metrics span{font-size:9px;color:var(--ui-muted)}.dash-health-metrics strong{font-size:11px;color:var(--ui-ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.dash-upcoming-list{display:grid;gap:8px}.dash-upcoming-row{display:flex;align-items:center;gap:10px;border:0;border-radius:15px;min-width:0;background:#f5f7f7;padding:11px 10px;color:var(--ui-ink);text-align:start;cursor:pointer}
+.dash-upcoming-row:hover{background:#e8f6f3}.dash-upcoming-icon{display:grid;place-items:center;border-radius:12px;background:#fff;color:#d0778b;flex:none;width:36px;height:36px}
+.dash-upcoming-row:nth-child(2n) .dash-upcoming-icon{color:#0e9192}
+.dash-upcoming-row .dash-grow{min-width:0}.dash-upcoming-row strong{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:11px}.dash-upcoming-row small{color:var(--ui-muted);font-size:9px;display:block}
+.dash-upcoming-value{display:flex;flex-direction:column;align-items:end;text-align:end;font-weight:800;font-size:11px;flex:none;max-width:37%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.dash-calendar-foot{border-top:1px solid var(--ui-stroke)}
+/* Dark variables use the exact same geometry, avoiding a separate layout. */
+html[data-theme=dark]{--ui-bg:#0e171b;--ui-card:#18262b;--ui-ink:#edf3f3;--ui-muted:#99aeb2;--ui-stroke:#294046;--ui-accent:#65d2c5;--ui-raise:0 9px 24px #010b0d2b}
+html[data-theme=dark] .app-overview{background:radial-gradient(ellipse at 78% -15%,#17383a 0,transparent 50%),#0e171b}
+html[data-theme=dark] .app-overview .sidebar{background:transparent;color:#d5e2e4;border-color:#24383c}
+html[data-theme=dark] .app-overview .sidebar .nav-link{background:#213238;color:#b7cbce;border-color:#2b4449}
+html[data-theme=dark] .app-overview .sidebar .nav-link.active{background:#e4f7f3;color:#18363b}
+html[data-theme=dark] .dash-hero{background:var(--ui-card);color:var(--ui-ink);box-shadow:var(--ui-raise);border-color:var(--ui-stroke)}
+html[data-theme=dark] .dash-hero-main,html[data-theme=dark] .dash-hero-chart{background:transparent}
+html[data-theme=dark] .dash-hero-kicker,html[data-theme=dark] .dash-hero-chart-head{color:var(--ui-ink)}
+html[data-theme=dark] .dash-hero-balance,html[data-theme=dark] .dash-health-gauge strong{color:#f5fbfa}
+html[data-theme=dark] .dash-hero-new{background:#aaf1df;color:#173c39}
+html[data-theme=dark] .dash-hero-positive{background:#17483f;color:#a4eed7}
+html[data-theme=dark] .dash-hero-negative{background:#50352e;color:#ffc3aa}
+html[data-theme=dark] .dash-bank-actions button,html[data-theme=dark] .dash-upcoming-row{background:#22353a;color:#e4f1ef}
+html[data-theme=dark] .dash-upcoming-icon{background:#304449}
+html[data-theme=dark] .dash-visual-account-0{background:linear-gradient(135deg,#1c5c59,#163d42);color:#e8f7f2}
+html[data-theme=dark] .dash-visual-account-1{background:linear-gradient(135deg,#2b3348,#1a2433);color:#f6f8ff}
+html[data-theme=dark] .dash-sum:nth-child(4n+1){background:#2b2b46}html[data-theme=dark] .dash-sum:nth-child(4n+2){background:#1e3b4b}html[data-theme=dark] .dash-sum:nth-child(4n+3){background:#1d453f}html[data-theme=dark] .dash-sum:nth-child(4n+4){background:#47352e}
+html[data-theme=dark] .dash-sum-top>span:first-child{color:#becfd2}
+html[data-theme=dark] .dash-sum-icon{background:#ffffff19;color:#d8eeee}
+html[data-theme=dark] .dash-health-gauge::before{background:conic-gradient(from 270deg,var(--health-color) 0 var(--health-value),#33454a var(--health-value) 100%)}
+html[data-theme=dark] .dash-action-primary{background:#97e7d9;color:#143b40;border-color:#97e7d9}
+html[data-theme=dark] .dash-action-primary>span{background:#ffffff78;color:#143b40}
+/* Mobile: hero is a centered balance, card rail and soft floating dock. */
+@media(max-width:1250px){
+ .dash-module-hero{grid-column:span 7}.dash-module-accounts{grid-column:span 5}
+ .dash-module-goals,.dash-module-health,.dash-module-alerts{grid-column:span 6}
+ .dash-module-calendar,.dash-module-tasks,.dash-module-servers{grid-column:span 6}
+ .dash-health-gauge{width:175px}
+}
+@media(max-width:900px){
+ .dash-module-hero,.dash-module-accounts{grid-column:span 12}
+ .dash-bank-cards{flex-direction:row}.dash-visual-account{flex:1 1 0;min-width:0}
+ .dash-summary-grid{grid-template-columns:repeat(4,minmax(0,1fr))}
+ .dash-module-goals,.dash-module-health,.dash-module-alerts,.dash-module-calendar,.dash-module-tasks,.dash-module-servers{grid-column:span 6}
+}
+@media(max-width:700px){
+ .app-overview .main{padding:16px 13px 100px}
+ .app-overview .topbar{height:61px;background:var(--ui-card)}
+ .dashboard-home{padding-bottom:20px}
+ .dash-intro{margin:9px 2px 20px;align-items:center;gap:8px}.dash-intro h2{font-size:24px}.dash-intro p{font-size:10px;line-height:1.7;max-width:210px}.dash-intro .dash-overline{font-size:9px}
+ .dash-customize{font-size:0;gap:0;min-width:42px;width:42px;height:42px;padding:0;flex:none;border-radius:50%}.dash-customize svg{height:18px;width:18px}
+ .dash-market{margin-bottom:15px}.dash-market .dash-overline{display:none}.dash-section-title h2{font-size:13px}.dash-section-title{margin-bottom:9px}
+ .dash-market-scroller{gap:9px}.dash-rate-card{flex:0 0 158px;padding:9px 11px;border-radius:15px}.dash-rate-heading{gap:8px}.dash-currency-art{height:29px;width:29px;border-radius:9px}.dash-rate-price{font-size:14px;margin:4px 0}.dash-rate-foot span>span{display:none}.dash-rate-age{font-size:8px}.dash-market-note{font-size:8px;line-height:1.6}
+ .dash-modules{gap:12px}.dash-module-hero,.dash-module-accounts,.dash-module-stats,.dash-module-charts,.dash-module-actions,.dash-module-goals,.dash-module-health,.dash-module-alerts,.dash-module-calendar,.dash-module-tasks,.dash-module-servers{grid-column:span 12}
+ .dash-module-hero .dash-hero{min-height:405px}
+ .dash-hero{border-radius:27px}
+ .dash-hero-main{padding:20px 18px 10px;text-align:center}
+ .dash-hero-top{justify-content:space-between}
+ .dash-hero-balance-label{margin:27px 0 3px;text-align:center;font-size:11px}
+ .dash-hero-balance{text-align:center;font-size:clamp(23px,6vw,34px);min-height:40px}
+ .dash-hero-footline{justify-content:center;flex-wrap:wrap;gap:6px;font-size:9px;margin-top:6px}
+ .dash-hero-new{position:static;margin:15px auto 0;min-height:39px;padding:8px 18px}
+ .dash-hero-chart{padding:10px 13px 18px;min-height:171px}
+ .dash-hero-chart-head{padding:0 5px}.dash-hero-graph svg{height:125px}.dash-hero-months{font-size:9px}
+ .dash-panel,.dash-sum{border-radius:22px}.dash-panel>header{padding:17px 17px 5px}.dash-panel-body{padding:11px 16px 19px}
+ .dash-visual-account{padding:11px 14px;min-height:123px}.dash-bank-cards{flex-direction:column}
+ .dash-bank-actions{gap:8px}.dash-bank-actions button{min-height:52px}.dash-visual-account strong{font-size:17px}
+ .dash-summary-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.dash-sum{min-height:110px;padding:12px 14px}.dash-sum>strong{font-size:16px}
+ .dash-charts-grid{grid-template-columns:1fr}.dash-health{min-height:210px}
+ .app-overview .dash-mobile-dock{position:fixed;bottom:max(11px,env(safe-area-inset-bottom));left:50%;right:auto;transform:translateX(-50%);width:min(355px,calc(100% - 30px));min-height:61px;border:1px solid var(--ui-stroke);border-radius:24px;background:color-mix(in srgb,var(--ui-card) 93%,transparent);backdrop-filter:blur(14px);padding:6px;box-shadow:0 9px 30px #0f29302b;z-index:30;display:flex;align-items:center;justify-content:space-around}
+ .app-overview .dash-mobile-dock button{min-width:48px;min-height:47px;border-radius:16px;display:flex;flex-direction:column;justify-content:center;gap:2px;align-items:center;color:var(--ui-muted);background:transparent}
+ .app-overview .dash-mobile-dock button span{font-size:8px;font-weight:700}
+ .app-overview .dash-mobile-dock button.active{background:#0c747d;color:#fff}
+ .app-overview .dash-mobile-dock button.active svg{stroke-width:2.5}
+ .dash-bank-empty{min-height:140px}
+}
+@media(max-width:375px){.dash-rate-card{flex-basis:145px}.dash-hero-balance{font-size:22px}.dash-section-title h2{font-size:12px}}
+@media(prefers-reduced-motion:reduce){.dash-action,.dash-rate-card,.dash-visual-account{transition:none!important}}
+
+/* Functional navigation pills share the heading row: no extra vertical chrome. */
+.dash-intro-tools{display:flex;align-items:center;gap:12px;flex-wrap:wrap;justify-content:flex-end}
+.dash-view-nav{display:flex;align-items:center;gap:3px;padding:4px;border:1px solid var(--ui-stroke);border-radius:999px;background:var(--ui-card)}
+.dash-view-nav button{border:0;padding:9px 14px;background:transparent;color:var(--ui-muted);font-size:11px;font-weight:750;border-radius:999px;cursor:pointer;white-space:nowrap}
+.dash-view-nav button:hover{background:#edf7f5;color:#126e74}
+.dash-view-nav button.active{background:#202b30;color:#fff}
+html[data-theme=dark] .dash-view-nav button.active{background:#d9f2e9;color:#193b40}
+html[data-theme=dark] .dash-view-nav button:hover{background:#284b4a;color:#c6f6ef}
+@media(max-width:1150px){.dash-view-nav{display:none}}
+@media(max-width:700px){.dash-intro-tools{gap:0}.dash-customize span{display:none}}
+/* Keep the financially central card visible in the first desktop viewport. */
+@media(min-width:901px){
+ .app-overview .main{padding-top:22px}
+ .dash-intro{margin-bottom:15px}
+ .dash-intro h2{font-size:clamp(24px,2.1vw,30px)}
+ .dash-intro p{margin-top:2px}
+ .dash-market{margin-bottom:11px}
+ .dash-market .dash-overline{display:none}
+ .dash-market .dash-section-title{margin-bottom:4px}
+ .dash-market .dash-rate-card{padding-top:9px;padding-bottom:8px}
+ .dash-market .dash-market-note{margin-top:-3px}
+}
+
+.dash-hero-months{direction:ltr}
+.dash-hero-months span{direction:rtl}
