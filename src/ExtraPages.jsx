@@ -42,7 +42,11 @@ export function CalendarPage({data,onTask}){
   ...data.installments.filter(x=>x.due_date).map(x=>({date:String(x.due_date).slice(0,10),name:x.title,kind:'موعد قسط',id:'installment-'+x.id})),
   ...data.personal_balances.filter(x=>x.due_date&&x.total!==x.settled).map(x=>({
    date:String(x.due_date).slice(0,10),name:x.title,kind:x.direction==='debt'?'سررسید بدهی':'سررسید طلب',id:'balance-'+x.id
-  }))
+  })),
+  ...(data.transactions||[]).map(x=>({date:String(x.date).slice(0,10),name:x.description+' · '+formatMoney(x.amount),kind:x.type==='income'?'درآمد':x.type==='expense'?'هزینه':'پرداخت قسط',id:'tx-'+x.id})),
+  ...(data.finance_checks||[]).filter(x=>x.status==='pending').map(x=>({date:String(x.due_date).slice(0,10),name:x.title+' · '+formatMoney(x.amount),kind:x.direction==='incoming'?'موعد چک دریافتی':'موعد چک پرداختی',id:'check-'+x.id})),
+  ...(data.finance_budgets||[]).map(x=>({date:String(x.end_date).slice(0,10),name:x.title,kind:'پایان بازه هدف مالی',id:'budget-'+x.id})),
+  ...(data.account_transfers||[]).map(x=>({date:String(x.date).slice(0,10),name:formatMoney(x.amount),kind:'انتقال بین حساب‌ها',id:'transfer-'+x.id}))
  ];
  const move=delta=>{
   const next=changeMonth(month.year,month.month,delta);

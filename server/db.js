@@ -98,6 +98,33 @@ export async function migrate(){
    await c.query(`CREATE INDEX IF NOT EXISTS "idx_${table}_owner" ON "${table}"(user_id)`);
   }
   await c.query('INSERT INTO schema_migrations(version) VALUES(6) ON CONFLICT DO NOTHING');
+  // v6.3 finance additions are additive. Existing balances and transaction rows retain their meaning.
+  await c.query(`ALTER TABLE bank_accounts ADD COLUMN IF NOT EXISTS owner_name text NOT NULL DEFAULT ''`);
+  await c.query(`ALTER TABLE bank_accounts ADD COLUMN IF NOT EXISTS account_number text NOT NULL DEFAULT ''`);
+  await c.query(`ALTER TABLE bank_accounts ADD COLUMN IF NOT EXISTS card_number text NOT NULL DEFAULT ''`);
+  await c.query(`ALTER TABLE bank_accounts ADD COLUMN IF NOT EXISTS iban text NOT NULL DEFAULT ''`);
+  await c.query(`ALTER TABLE bank_accounts ADD COLUMN IF NOT EXISTS branch text NOT NULL DEFAULT ''`);
+  await c.query(`ALTER TABLE bank_accounts ADD COLUMN IF NOT EXISTS color text NOT NULL DEFAULT '#64748b'`);
+  await c.query(`CREATE TABLE IF NOT EXISTS finance_contacts(id text PRIMARY KEY,user_id text NOT NULL REFERENCES users(id) ON DELETE RESTRICT,name text NOT NULL,phone text NOT NULL DEFAULT '',notes text NOT NULL DEFAULT '',created_at timestamptz NOT NULL DEFAULT now())`);
+  await c.query(`ALTER TABLE personal_balances ADD COLUMN IF NOT EXISTS contact_id text REFERENCES finance_contacts(id) ON DELETE SET NULL`);
+  await c.query(`ALTER TABLE transactions ADD COLUMN IF NOT EXISTS account_id text REFERENCES bank_accounts(id) ON DELETE RESTRICT`);
+  await c.query(`CREATE TABLE IF NOT EXISTS account_transfers(id text PRIMARY KEY,user_id text NOT NULL REFERENCES users(id) ON DELETE RESTRICT,from_account_id text NOT NULL REFERENCES bank_accounts(id) ON DELETE RESTRICT,to_account_id text NOT NULL REFERENCES bank_accounts(id) ON DELETE RESTRICT,amount numeric(22,2) NOT NULL CHECK(amount>0),date date NOT NULL,notes text NOT NULL DEFAULT '',created_at timestamptz NOT NULL DEFAULT now(),CHECK(from_account_id<>to_account_id))`);
+  await c.query(`CREATE TABLE IF NOT EXISTS finance_checks(id text PRIMARY KEY,user_id text NOT NULL REFERENCES users(id) ON DELETE RESTRICT,direction text NOT NULL CHECK(direction IN ('incoming','outgoing')),title text NOT NULL,check_number text NOT NULL DEFAULT '',bank text NOT NULL DEFAULT '',amount numeric(22,2) NOT NULL CHECK(amount>0),due_date date NOT NULL,status text NOT NULL DEFAULT 'pending' CHECK(status IN ('pending','cleared','bounced','cancelled')),contact_id text REFERENCES finance_contacts(id) ON DELETE SET NULL,notes text NOT NULL DEFAULT '',created_at timestamptz NOT NULL DEFAULT now())`);
+  await c.query(`CREATE TABLE IF NOT EXISTS finance_budgets(id text PRIMARY KEY,user_id text NOT NULL REFERENCES users(id) ON DELETE RESTRICT,kind text NOT NULL CHECK(kind IN ('expense','income','savings')),title text NOT NULL,category text NOT NULL DEFAULT '',target numeric(22,2) NOT NULL CHECK(target>0),start_date date NOT NULL,end_date date NOT NULL,notes text NOT NULL DEFAULT '',created_at timestamptz NOT NULL DEFAULT now(),CHECK(end_date>=start_date))`);
+  await c.query(`CREATE TABLE IF NOT EXISTS personal_payments(id text PRIMARY KEY,user_id text NOT NULL REFERENCES users(id) ON DELETE RESTRICT,balance_id text NOT NULL REFERENCES personal_balances(id) ON DELETE CASCADE,amount numeric(22,2) NOT NULL CHECK(amount>0),date date NOT NULL,notes text NOT NULL DEFAULT '',created_at timestamptz NOT NULL DEFAULT now())`);
+  await c.query(`CREATE TABLE IF NOT EXISTS shared_groups(id text PRIMARY KEY,user_id text NOT NULL REFERENCES users(id) ON DELETE RESTRICT,title text NOT NULL,description text NOT NULL DEFAULT '',created_at timestamptz NOT NULL DEFAULT now())`);
+  await c.query(`CREATE TABLE IF NOT EXISTS shared_members(id text PRIMARY KEY,user_id text NOT NULL REFERENCES users(id) ON DELETE RESTRICT,group_id text NOT NULL REFERENCES shared_groups(id) ON DELETE CASCADE,name text NOT NULL,created_at timestamptz NOT NULL DEFAULT now())`);
+  await c.query(`CREATE TABLE IF NOT EXISTS shared_expenses(id text PRIMARY KEY,user_id text NOT NULL REFERENCES users(id) ON DELETE RESTRICT,group_id text NOT NULL REFERENCES shared_groups(id) ON DELETE CASCADE,title text NOT NULL,payer_id text NOT NULL REFERENCES shared_members(id) ON DELETE RESTRICT,amount numeric(22,2) NOT NULL CHECK(amount>0),date date NOT NULL,notes text NOT NULL DEFAULT '',created_at timestamptz NOT NULL DEFAULT now())`);
+  await c.query(`CREATE TABLE IF NOT EXISTS shared_shares(id text PRIMARY KEY,user_id text NOT NULL REFERENCES users(id) ON DELETE RESTRICT,expense_id text NOT NULL REFERENCES shared_expenses(id) ON DELETE CASCADE,member_id text NOT NULL REFERENCES shared_members(id) ON DELETE RESTRICT,amount numeric(22,2) NOT NULL CHECK(amount>=0),created_at timestamptz NOT NULL DEFAULT now(),UNIQUE(expense_id,member_id))`);
+  await c.query(`CREATE TABLE IF NOT EXISTS shared_settlements(id text PRIMARY KEY,user_id text NOT NULL REFERENCES users(id) ON DELETE RESTRICT,group_id text NOT NULL REFERENCES shared_groups(id) ON DELETE CASCADE,from_member_id text NOT NULL REFERENCES shared_members(id) ON DELETE RESTRICT,to_member_id text NOT NULL REFERENCES shared_members(id) ON DELETE RESTRICT,amount numeric(22,2) NOT NULL CHECK(amount>0),date date NOT NULL,notes text NOT NULL DEFAULT '',created_at timestamptz NOT NULL DEFAULT now(),CHECK(from_member_id<>to_member_id))`);
+  for(const table of ['finance_contacts','account_transfers','finance_checks','finance_budgets','personal_payments','shared_groups','shared_members','shared_expenses','shared_shares','shared_settlements']){
+   await c.query(`CREATE INDEX IF NOT EXISTS "idx_${table}_owner" ON "${table}"(user_id)`);
+  }
+  for(const [index,table,column] of [['tx_account','transactions','account_id'],['balance_contact','personal_balances','contact_id'],['checks_due','finance_checks','due_date'],['budget_date','finance_budgets','start_date'],['member_group','shared_members','group_id'],['expense_group','shared_expenses','group_id'],['share_expense','shared_shares','expense_id'],['settlement_group','shared_settlements','group_id']]){
+   await c.query(`CREATE INDEX IF NOT EXISTS "idx_${index}" ON "${table}"("${column}")`);
+  }
+  await c.query('INSERT INTO schema_migrations(version) VALUES(7) ON CONFLICT DO NOTHING');
+
   const initialOwner=(await c.query(`SELECT id FROM users WHERE role='admin' ORDER BY created_at LIMIT 1`)).rows[0]?.id;
   if(initialOwner)await claimLegacy(c,initialOwner);
   // Enforce non-null ownership whenever all historic records have been assigned.

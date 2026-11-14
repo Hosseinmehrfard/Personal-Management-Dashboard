@@ -10,6 +10,7 @@ import {effectiveRates,refreshRates,rateSnapshot} from './rates.js';
 import {DEFAULT_ARZDIGITAL,validateArzdigitalConfig} from './arzdigital.js';
 import {validateRateSource,validateNerkharaId} from './nerkhara.js';
 import {agentAllowedHost,pinnedRequest,validateMetrics,safeDocHost} from './outbound.js';
+import {registerSharedRoutes} from './shared.js';
 
 const app=express();
 app.disable('x-powered-by');
@@ -60,17 +61,21 @@ function amountInCents(amount){
 const TYPES={
  tasks:{table:'tasks',fields:['title','category','status','priority','due_date','notes','chapter_id','class_id'],shape:v=>({title:val(v.title,180,true),category:allow(v.category,['work','personal','server','class','owasp','finance'],'work'),status:allow(v.status,['todo','progress','review','done'],'todo'),priority:allow(v.priority,['low','medium','high'],'medium'),due_date:dateOf(v.due_date??v.due),notes:val(v.notes,8000),chapter_id:val(v.chapter_id??v.chapterId,100)||null,class_id:val(v.class_id??v.classId,100)||null})},
  servers:{table:'servers',fields:['name','host','environment','mode','notes'],shape:v=>({name:val(v.name,120,true),host:val(v.host,200),environment:allow(v.environment,['production','staging','development','other'],'production'),mode:allow(v.mode,['manual','agent'],'manual'),notes:val(v.notes,8000)})},
- transactions:{table:'transactions',fields:['type','amount','date','category','description','installment_id'],shape:v=>({type:allow(v.type,['income','expense','installment'],'expense'),amount:moneyNumber(v.amount),date:dateOf(v.date)||fail('تاریخ ضروری است'),category:val(v.category,80)||'عمومی',description:val(v.description,220,true),installment_id:val(v.installment_id??v.installmentId,100)||null})},
+ transactions:{table:'transactions',fields:['type','amount','date','category','description','installment_id','account_id'],shape:v=>({type:allow(v.type,['income','expense','installment'],'expense'),amount:moneyNumber(v.amount),date:dateOf(v.date)||fail('تاریخ ضروری است'),category:val(v.category,80)||'عمومی',description:val(v.description,220,true),installment_id:val(v.installment_id??v.installmentId,100)||null,account_id:val(v.account_id,100)||null})},
  installments:{table:'installments',fields:['title','total','paid','monthly','due_date','notes'],shape:v=>{const total=moneyNumber(v.total),paid=numberOrZero(v.paid);if(paid>total)fail('مجموع پرداخت نباید از کل تعهد بیشتر باشد');return {title:val(v.title,180,true),total,paid,monthly:numberOrZero(v.monthly),due_date:dateOf(v.due_date??v.dueDate),notes:val(v.notes,8000)}}},
- personal_balances:{table:'personal_balances',fields:['direction','title','total','settled','due_date','notes'],shape:v=>{
+ personal_balances:{table:'personal_balances',fields:['direction','title','total','settled','due_date','notes','contact_id'],shape:v=>{
   if(!['debt','receivable'].includes(v.direction))fail('نوع بدهی یا طلب نامعتبر است');
   const total=ledgerAmount(v.total),settled=ledgerAmount(v.settled??0);
   if(amountInCents(total)<=0n||amountInCents(settled)>amountInCents(total))fail('مبلغ تسویه باید بین صفر و مبلغ کل باشد');
-  return {direction:v.direction,title:val(v.title,180,true),total,settled,due_date:dateOf(v.due_date),notes:val(v.notes,1000)};
+  return {direction:v.direction,title:val(v.title,180,true),total,settled,due_date:dateOf(v.due_date),notes:val(v.notes,1000),contact_id:val(v.contact_id,100)||null};
  }},
- bank_accounts:{table:'bank_accounts',fields:['title','bank','balance','notes'],shape:v=>({
-  title:val(v.title,120,true),bank:val(v.bank,120,true),balance:ledgerAmount(v.balance,true),notes:val(v.notes,1000)
+ bank_accounts:{table:'bank_accounts',fields:['title','bank','balance','notes','owner_name','account_number','card_number','iban','branch','color'],shape:v=>({
+  title:val(v.title,120,true),bank:val(v.bank,120,true),balance:ledgerAmount(v.balance,true),notes:val(v.notes,1000),owner_name:val(v.owner_name,120),account_number:val(v.account_number,50),card_number:val(v.card_number,32),iban:val(v.iban,40),branch:val(v.branch,120),color:/^#[a-fA-F0-9]{6}$/.test(v.color)?v.color:'#64748b'
  })},
+ finance_contacts:{table:'finance_contacts',fields:['name','phone','notes'],shape:v=>({name:val(v.name,150,true),phone:val(v.phone,40),notes:val(v.notes,1000)})},
+ finance_checks:{table:'finance_checks',fields:['direction','title','check_number','bank','amount','due_date','status','contact_id','notes'],shape:v=>({direction:allow(v.direction,['incoming','outgoing'],'outgoing'),title:val(v.title,180,true),check_number:val(v.check_number,80),bank:val(v.bank,120),amount:(()=>{const n=ledgerAmount(v.amount);if(amountInCents(n)<=0n)fail('مبلغ چک باید مثبت باشد');return n})(),due_date:dateOf(v.due_date)||fail('تاریخ سررسید ضروری است'),status:allow(v.status,['pending','cleared','bounced','cancelled'],'pending'),contact_id:val(v.contact_id,100)||null,notes:val(v.notes,1000)})},
+ finance_budgets:{table:'finance_budgets',fields:['kind','title','category','target','start_date','end_date','notes'],shape:v=>{const start_date=dateOf(v.start_date),end_date=dateOf(v.end_date);if(!start_date||!end_date||end_date<start_date)fail('بازه زمانی بودجه معتبر نیست');return {kind:allow(v.kind,['expense','income','savings'],'expense'),title:val(v.title,180,true),category:val(v.category,80),target:(()=>{const n=ledgerAmount(v.target);if(amountInCents(n)<=0n)fail('هدف مالی باید مثبت باشد');return n})(),start_date,end_date,notes:val(v.notes,1000)}}},
+ account_transfers:{table:'account_transfers',fields:['from_account_id','to_account_id','amount','date','notes'],shape:v=>{const from_account_id=idOf(v.from_account_id),to_account_id=idOf(v.to_account_id);if(from_account_id===to_account_id)fail('حساب مبدأ و مقصد باید متفاوت باشند');return {from_account_id,to_account_id,amount:(()=>{const n=ledgerAmount(v.amount);if(amountInCents(n)<=0n)fail('مبلغ انتقال باید مثبت باشد');return n})(),date:dateOf(v.date)||fail('تاریخ ضروری است'),notes:val(v.notes,1000)}}},
  holdings:{table:'holdings',fields:['asset','quantity','note'],shape:v=>({asset:val(v.asset,12,true).toUpperCase(),quantity:moneyNumber(v.quantity,true),note:val(v.note,1000)})},
  currencies:{table:'currencies',pk:'code',fields:['name','symbol','unit','navasan_code','arzdigital_code','nerkhara_id','manual_toman'],shape:v=>({name:val(v.name,100,true),symbol:val(v.symbol,16,true),unit:val(v.unit,50,true),navasan_code:val(v.navasan_code??v.navasanCode,40).toLowerCase()||null,arzdigital_code:val(v.arzdigital_code??v.arzdigitalCode,32).toUpperCase()||null,nerkhara_id:validateNerkharaId(v.nerkhara_id??null),manual_toman:numOrNull(v.manual_toman??v.manualToman)})},
  classes:{table:'classes',fields:['title','description','status','notes'],shape:v=>({title:val(v.title,200,true),description:val(v.description,8000),status:allow(v.status,['todo','progress','review','done'],'todo'),notes:val(v.notes,12000)})},
@@ -99,7 +104,16 @@ async function putRecord(client,kind,key,input,userId){
    if(data.class_id)await assertOwnedReference(client,'classes',data.class_id,userId);
    if(data.chapter_id)await assertOwnedReference(client,'chapters',data.chapter_id,userId);
   }
-  if(kind==='transactions'&&data.installment_id)await assertOwnedReference(client,'installments',data.installment_id,userId);
+  if(kind==='transactions'){
+   if(data.installment_id)await assertOwnedReference(client,'installments',data.installment_id,userId);
+   if(data.account_id)await assertOwnedReference(client,'bank_accounts',data.account_id,userId);
+  }
+  if(kind==='personal_balances'&&data.contact_id)await assertOwnedReference(client,'finance_contacts',data.contact_id,userId);
+  if(kind==='finance_checks'&&data.contact_id)await assertOwnedReference(client,'finance_contacts',data.contact_id,userId);
+  if(kind==='account_transfers'){
+   await assertOwnedReference(client,'bank_accounts',data.from_account_id,userId);
+   await assertOwnedReference(client,'bank_accounts',data.to_account_id,userId);
+  }
  }
  const columns=[pk,...fields,...(owned?['user_id']:[])],vals=[key,...fields.map(f=>data[f]),...(owned?[userId]:[])];
  const update=fields.map(f=>`"${f}"=EXCLUDED."${f}"`).join(',');
@@ -265,6 +279,7 @@ app.put('/api/currencies/:code/visibility',wrap(async(req,res)=>{
  res.json({ok:true});
 }));
 app.get('/api/dashboard',wrap(async(req,res)=>res.json(await dashboard(req.session.user_id))));
+registerSharedRoutes(app,{wrap,fail,tx,query,randomUUID,logActivity,idOf,val,dateOf,ledgerAmount,amountInCents,assertOwnedReference});
 for(const kind of Object.keys(TYPES)){
  const isGlobal=kind==='currencies';
  app.post('/api/'+kind,wrap(async(req,res)=>{
@@ -302,7 +317,7 @@ for(const kind of Object.keys(TYPES)){
  }));
 }
 app.post('/api/installments/:id/pay',wrap(async(req,res)=>{const id=idOf(req.params.id),amount=moneyNumber(req.body?.amount),date=dateOf(req.body?.date)||new Date().toISOString().slice(0,10);
- const result=await tx(async c=>{const item=(await c.query('SELECT * FROM installments WHERE id=$1 AND user_id=$2 FOR UPDATE',[id,req.session.user_id])).rows[0];if(!item)fail('قسط پیدا نشد',404);const pending=Number(item.total)-Number(item.paid);if(amount>pending+0.001)fail('مبلغ پرداخت از باقی‌مانده بیشتر است');await c.query('UPDATE installments SET paid=paid+$1 WHERE id=$2 AND user_id=$3',[amount,id,req.session.user_id]);const entry={type:'installment',amount,date,category:'اقساط',description:'پرداخت '+item.title,installment_id:id};const txRow=await putRecord(c,'transactions',randomUUID(),entry,req.session.user_id);await logActivity(c,'پرداخت قسط '+item.title+' به مبلغ '+amount,'finance',req.session.user_id);return txRow});res.json(result)}));
+ const result=await tx(async c=>{const item=(await c.query('SELECT * FROM installments WHERE id=$1 AND user_id=$2 FOR UPDATE',[id,req.session.user_id])).rows[0];if(!item)fail('قسط پیدا نشد',404);const pending=Number(item.total)-Number(item.paid);if(amount>pending+0.001)fail('مبلغ پرداخت از باقی‌مانده بیشتر است');await c.query('UPDATE installments SET paid=paid+$1 WHERE id=$2 AND user_id=$3',[amount,id,req.session.user_id]);const account_id=req.body?.account_id?idOf(req.body.account_id):null;if(account_id)await assertOwnedReference(c,'bank_accounts',account_id,req.session.user_id);const entry={type:'installment',amount,date,category:'اقساط',description:'پرداخت '+item.title,installment_id:id,account_id};const txRow=await putRecord(c,'transactions',randomUUID(),entry,req.session.user_id);await logActivity(c,'پرداخت قسط '+item.title+' به مبلغ '+amount,'finance',req.session.user_id);return txRow});res.json(result)}));
 app.put('/api/servers/:id/metrics',wrap(async(req,res)=>{const id=idOf(req.params.id),m=req.body||{};for(const k of ['cpu','memory','disk'])if(typeof m[k]!=='object'||m[k]===null)fail('داده منابع ناقص است');const metrics=validateMetrics(m);const updated=await query("UPDATE servers SET metrics=$1,metrics_source='manual',metrics_at=now(),updated_at=now() WHERE id=$2 AND user_id=$3 RETURNING id",[metrics,id,req.session.user_id]);if(!updated.rowCount)fail('سرور یافت نشد',404);res.json(metrics)}));
 app.post('/api/servers/:id/agent',wrap(async(req,res)=>{const id=idOf(req.params.id),url=agentAllowedHost(val(req.body.url,500,true)).href,token=val(req.body.token,512,true);if(token.length<32)fail('توکن عامل حداقل ۳۲ نویسه باشد');if(!(await query('SELECT 1 FROM servers WHERE id=$1 AND user_id=$2',[id,req.session.user_id])).rowCount)fail('سرور یافت نشد',404);await query('INSERT INTO agents(server_id,url,encrypted_token) VALUES($1,$2,$3) ON CONFLICT(server_id) DO UPDATE SET url=$2,encrypted_token=$3',[id,url,encrypt(token)]);await query("UPDATE servers SET mode='agent' WHERE id=$1 AND user_id=$2",[id,req.session.user_id]);res.json({ok:true})}));
 app.delete('/api/servers/:id/agent',wrap(async(req,res)=>{const id=idOf(req.params.id);await query('DELETE FROM agents WHERE server_id=$1 AND EXISTS(SELECT 1 FROM servers WHERE id=$1 AND user_id=$2)',[id,req.session.user_id]);await query("UPDATE servers SET mode='manual' WHERE id=$1 AND user_id=$2",[id,req.session.user_id]);res.json({ok:true})}));
@@ -343,15 +358,15 @@ app.post('/api/rates/refresh',wrap(async(req,res)=>{
  res.json({...result,...await rateSnapshot()});
 }));
 app.get('/api/links/check',wrap(async(req,res)=>{const target=new URL(safeUrl(String(req.query.url||'')));const host=target.hostname.toLowerCase();if(!safeDocHost(host))fail('بررسی خودکار فقط برای دامنه‌های مستندات شناخته‌شده مجاز است');const r=await pinnedRequest(target.href,{method:'HEAD',maxBytes:0,timeout:6500,publicOnly:true});res.json({ok:r.status>=200&&r.status<400,status:r.status,checkedAt:new Date().toISOString()})}));
-app.get('/api/export',wrap(async(req,res)=>{const data=await dashboard(req.session.user_id);const history=(await query('SELECT code,price_toman,source,at FROM rate_history ORDER BY at DESC LIMIT 10000')).rows;const quotes=(await query('SELECT * FROM exchange_rates')).rows;res.setHeader('Content-Disposition','attachment; filename="personal-dashboard-backup.json"');res.json({version:6,exportedAt:new Date().toISOString(),...data,rate_history:history,exchange_rates:quotes})}));
+app.get('/api/export',wrap(async(req,res)=>{const data=await dashboard(req.session.user_id);const history=(await query('SELECT code,price_toman,source,at FROM rate_history ORDER BY at DESC LIMIT 10000')).rows;const quotes=(await query('SELECT * FROM exchange_rates')).rows;res.setHeader('Content-Disposition','attachment; filename="personal-dashboard-backup.json"');res.json({version:7,exportedAt:new Date().toISOString(),...data,rate_history:history,exchange_rates:quotes})}));
 app.post('/api/import/legacy',wrap(async(req,res)=>{requireAdmin(req);
  const old=req.body||{};
  if(!old||typeof old!=='object'||Array.isArray(old)||!Array.isArray(old.tasks)||!Array.isArray(old.chapters)||!Array.isArray(old.holdings))fail('ساختار فایل پشتیبان معتبر نیست');
- for(const k of ['tasks','chapters','holdings','servers','transactions','installments','currencies','topics','resources','activities','rate_history','exchange_rates','classes','personal_balances','bank_accounts'])if(old[k]!==undefined&&(!Array.isArray(old[k])||old[k].length>5000))fail('حجم یا ساختار پشتیبان نامعتبر است');
+ for(const k of ['tasks','chapters','holdings','servers','transactions','installments','currencies','topics','resources','activities','rate_history','exchange_rates','classes','personal_balances','bank_accounts','finance_contacts','finance_checks','finance_budgets','account_transfers','personal_payments','shared_groups','shared_members','shared_expenses','shared_shares','shared_settlements'])if(old[k]!==undefined&&(!Array.isArray(old[k])||old[k].length>5000))fail('حجم یا ساختار پشتیبان نامعتبر است');
  let imported=0;
  await tx(async c=>{
   await c.query('SELECT pg_advisory_xact_lock(7200341, 2)');
-  const existing=(await c.query('SELECT (SELECT count(*) FROM tasks WHERE user_id=$1)+(SELECT count(*) FROM holdings WHERE user_id=$1)+(SELECT count(*) FROM transactions WHERE user_id=$1)+(SELECT count(*) FROM servers WHERE user_id=$1)+(SELECT count(*) FROM classes WHERE user_id=$1)+(SELECT count(*) FROM chapters WHERE user_id=$1)+(SELECT count(*) FROM installments WHERE user_id=$1)+(SELECT count(*) FROM personal_balances WHERE user_id=$1)+(SELECT count(*) FROM bank_accounts WHERE user_id=$1) AS n',[req.session.user_id])).rows[0];
+  const existing=(await c.query('SELECT (SELECT count(*) FROM tasks WHERE user_id=$1)+(SELECT count(*) FROM holdings WHERE user_id=$1)+(SELECT count(*) FROM transactions WHERE user_id=$1)+(SELECT count(*) FROM servers WHERE user_id=$1)+(SELECT count(*) FROM classes WHERE user_id=$1)+(SELECT count(*) FROM chapters WHERE user_id=$1)+(SELECT count(*) FROM installments WHERE user_id=$1)+(SELECT count(*) FROM personal_balances WHERE user_id=$1)+(SELECT count(*) FROM bank_accounts WHERE user_id=$1)+(SELECT count(*) FROM shared_groups WHERE user_id=$1)+(SELECT count(*) FROM finance_checks WHERE user_id=$1)+(SELECT count(*) FROM finance_contacts WHERE user_id=$1) AS n',[req.session.user_id])).rows[0];
   if(Number(existing.n)>0)fail('برای جلوگیری از تداخل، دیتابیس باید بدون اطلاعات کاربر باشد');
   const settings=old.settings||{};
   // Both v2 (nested chapters, customCurrencies) and v3 (relational arrays) are supported.
@@ -372,13 +387,22 @@ app.post('/api/import/legacy',wrap(async(req,res)=>{requireAdmin(req);
   const resources=old.version>=3?(old.resources||[]):old.chapters.flatMap(ch=>(ch.resources||[]).map(x=>({...x,chapter_id:ch.id})));
   for(const item of topics){await putRecord(c,'topics',idOf(item.id||randomUUID()),item,req.session.user_id);imported++;}
   for(const item of resources){await putRecord(c,'resources',idOf(item.id||randomUUID()),item,req.session.user_id);imported++;}
-  for(const kind of ['tasks','servers','installments','transactions','holdings','personal_balances','bank_accounts']){
+  for(const kind of ['tasks','servers','installments','bank_accounts','finance_contacts','transactions','holdings','personal_balances','finance_checks','finance_budgets','account_transfers']){
    for(const source of old[kind]||[]){
     const id=idOf(source.id||randomUUID());const item={...source,id};if(kind==='tasks'&&item.class_id&&!old.classes?.some(c=>c.id===item.class_id))item.class_id=legacyClassId;
     if(kind==='transactions'&&Number(item.amount)<=0)continue;
     if(kind==='servers'&&item.mode==='agent')item.mode='manual'; // agent credentials never exported
     await putRecord(c,kind,id,item,req.session.user_id);imported++;
     if(kind==='servers'&&source.metrics){const m=validateMetrics(source.metrics);await c.query("UPDATE servers SET metrics=$1,metrics_source='imported',metrics_at=$2 WHERE id=$3",[m,m.at,id]);}
+   }
+  }
+  // Import group data in parent-first order without accepting user_id from the file.
+  for(const table of ['shared_groups','shared_members','shared_expenses','shared_shares','shared_settlements','personal_payments']){
+   const columns={shared_groups:['title','description'],shared_members:['group_id','name'],shared_expenses:['group_id','title','payer_id','amount','date','notes'],shared_shares:['expense_id','member_id','amount'],shared_settlements:['group_id','from_member_id','to_member_id','amount','date','notes'],personal_payments:['balance_id','amount','date','notes']}[table];
+   for(const source of old[table]||[]){
+    const values=[idOf(source.id||randomUUID()),req.session.user_id,...columns.map(k=>source[k])];
+    await c.query(`INSERT INTO "${table}" (${['id','user_id',...columns].map(k=>'"'+k+'"').join(',')}) VALUES (${values.map((_,i)=>'$'+(i+1)).join(',')})`,values);
+    imported++;
    }
   }
   for(const activity of (old.activities||[]).slice(0,500)){
