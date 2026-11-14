@@ -1,6 +1,35 @@
 // Progressive localization for legacy React views. Keeps the original source texts
 // intact so all existing forms and data remain unchanged when toggling languages.
 export const en={
+'نمایش منوها':'Expand navigation',
+'جمع‌کردن منو':'Collapse navigation',
+'ارزها و اولویت نمایش':'Currencies & display order',
+'دریافت نرخ جدید':'Refresh quotes',
+'جست‌وجوی نام یا نماد ارز':'Search currency or code',
+'اولویت بازار با انتخاب شما':'Your market, your priorities',
+'حسابداری روزمره، بدون پیچیدگی':'Simple everyday finance',
+'پایش و مدیریت سرورها':'Server management & monitoring',
+'کلاس‌ها و منابع در یک فضای منظم':'Classes and resources in one place',
+'مسیر روشن برای کارهای روزانه':'A clear view of daily tasks',
+'فضای شخصی برای هر حساب':'A private space for each account',
+'مدیریت به‌روزرسانی':'Manage updates',
+'تنظیمات شخصی و سرویس‌ها':'Preferences and integrations',
+'زمان‌بندی روشن برای روزهای مهم':'A clearer view of important dates',
+'افزایش اولویت':'Move up',
+'کاهش اولویت':'Move down',
+'همه نمادها':'Total currencies',
+'نرخ‌های موجود':'Available quotes',
+'حساب‌های بانکی':'Bank accounts',
+'اقساط باز':'Open installments',
+'کارهای زمان‌دار':'Scheduled tasks',
+'در انتظار انجام':'To do',
+'دارای داده پایش':'With metrics',
+'فصل‌ها':'Chapters',
+'منابع':'Resources',
+'زبان':'Language',
+'ظاهر':'Appearance',
+'واحد پول':'Currency',
+
 'API رسمی ارزدیجیتال':'Official Arzdigital API',
 'NerkhAra · نرخ\u200cآرا':'NerkhAra',
 'دارایی بدون نرخ معتبر در جمع لحاظ نشده است.':'Assets without valid quotes are excluded.',
@@ -300,8 +329,7 @@ export const en={
 'تنظیمات نمایش':'Display settings','زبان رابط کاربری':'Interface language','ظاهر برنامه':'Appearance','واحد پول اصلی':'Display currency','روشن':'Light','تاریک':'Dark','فارسی':'Persian','انگلیسی':'English','ذخیره تنظیمات':'Save preferences','نرخ قابل استفاده نیست':'Exchange rate unavailable','مبنای ذخیره اطلاعات: تومان':'Stored amounts: TOMAN','اطلاعات به‌صورت تومان ذخیره می‌شوند و تبدیل واحد فقط برای نمایش و ورود مبلغ انجام می‌شود.':'Stored amounts remain in Toman; conversion applies to display and amount entry.','کلید تغییر زبان':'Change language','کلید تغییر تم':'Change theme','تنظیمات شخصی':'Personal preferences','واحد انتخابی':'Selected currency',
 'حذف هزینه':'Delete expense','حذف تسویه':'Delete settlement','حذف عضو':'Remove member','افزودن کاربر':'Add user','کاربر جدید':'New user','تاریخ شمسی':'Persian date','توضیحات سرور':'Server notes','نام سرور':'Server name','اولویت':'Priority','گروه':'Group','پایین':'Low','متوسط':'Medium','بالا':'High','عنوان کار':'Task name','موعد انجام':'Due date','روش ثبت منابع':'Monitoring mode',
 
-// New v6.6 reference-inspired dashboard copy; user-entered names are never rewritten.
-'پنل مدیریت شخصی نسخه ۶.۶ · React / PostgreSQL / PWA':'Personal Dashboard v6.6 · React / PostgreSQL / PWA',
+// Reference-inspired dashboard copy carried forward into v6.7; user-entered names are never rewritten.
 'داشبورد من':'My dashboard',
 'بخش‌های اصلی':'Main sections',
 'تقویم مالی':'Financial calendar',

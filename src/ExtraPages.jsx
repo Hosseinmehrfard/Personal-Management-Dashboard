@@ -1,5 +1,5 @@
 import React,{useEffect,useState} from 'react';
-import {Plus,Pencil,Trash2,Users,ShieldCheck,CalendarDays,ChevronRight,ChevronLeft,RefreshCw,BookOpen,Link2,ListTodo,Check,Eye,EyeOff,Save,KeyRound,CloudDownload,ExternalLink,Coins,ArrowLeft} from 'lucide-react';
+import {Plus,Pencil,Trash2,Users,ShieldCheck,CalendarDays,ChevronRight,ChevronLeft,RefreshCw,BookOpen,Link2,ListTodo,Check,Eye,EyeOff,Save,KeyRound,CloudDownload,ExternalLink,Coins,ArrowLeft,ArrowUp,ArrowDown,GripVertical} from 'lucide-react';
 import {formatMoney as uiMoney} from './uiPreferences.js';
 import {persianParts,toIsoJalali,daysInMonth,weekPosition,changeMonth,monthNames,weekdays,formatJalali,todayInTehran,holidayName,hasAnnualHolidays} from './jalali.js';
 
@@ -74,10 +74,39 @@ export function CalendarPage({data,onTask}){
   </Box>
  </div>;
 }
-export function CurrencyPage({data,onEdit,onRemove,onToggle,canEdit,busy,onRefresh,online}){
- const [search,setSearch]=useState('');const rates=Object.fromEntries(data.rates.map(x=>[x.code,x]));
- const rows=data.currencies.filter(c=>(c.name+' '+c.code).toLowerCase().includes(search.toLowerCase()));
- return <Box title="ارزها و دارایی‌های نمایشی" aside={canEdit&&<button className="button small" disabled={busy||!online} onClick={onRefresh}><RefreshCw size={15}/> به‌روزرسانی نرخ‌ها</button>}><div className="currency-toolbar"><input value={search} onChange={e=>setSearch(e.target.value)} placeholder="جست‌وجوی ارز و نماد"/><Notice>انتخاب نمایش برای هر کاربر مستقل است. غیرفعال‌کردن ارز، دارایی ثبت‌شده را حذف نمی‌کند. تومان همیشه فعال است.</Notice></div><div className="currency-list">{rows.map(c=><div className="currency-item" key={c.code}><span className="currency-icon">{c.symbol}</span><div className="grow"><strong>{c.name}</strong><small>{c.code} · {c.unit} · {rates[c.code]?.price?formatMoney(rates[c.code].price):'نرخ ثبت نشده'}</small></div><label className="currency-visible"><input type="checkbox" checked={c.is_visible!==false} disabled={busy||c.code==='TOMAN'} onChange={e=>onToggle(c.code,e.target.checked)}/><span>نمایش</span></label>{canEdit&&<><button className="icon-button" title="ویرایش" onClick={()=>onEdit(c)}><Pencil size={16}/></button>{!c.is_default&&<button className="icon-button danger" title="حذف" onClick={()=>onRemove(c)}><Trash2 size={16}/></button>}</>}</div>)}</div></Box>;
+export function CurrencyPage({data,onEdit,onRemove,onToggle,onReorder,canEdit,busy,onRefresh,online}){
+ const [search,setSearch]=useState('');
+ const [drag,setDrag]=useState(null);
+ const [draft,setDraft]=useState(null);
+ const serverCodes=(data.currencies||[]).map(c=>c.code);
+ const canonical=serverCodes.join('|');
+ useEffect(()=>{setDraft(null)},[canonical]);
+ const order=(draft&&draft.length===serverCodes.length&&draft.every(c=>serverCodes.includes(c)))?draft:serverCodes;
+ const currencyByCode=new Map((data.currencies||[]).map(c=>[c.code,c]));
+ const ordered=order.map(code=>currencyByCode.get(code)).filter(Boolean);
+ const rates=Object.fromEntries((data.rates||[]).map(x=>[x.code,x]));
+ const rows=ordered.filter(c=>(c.name+' '+c.code).toLowerCase().includes(search.toLowerCase()));
+ const change=(from,to)=>{
+  if(busy||from===to||from<0||to<0||from>=order.length||to>=order.length)return;
+  const next=[...order];const [item]=next.splice(from,1);next.splice(to,0,item);setDraft(next);
+  Promise.resolve(onReorder(next)).then(ok=>{if(ok===false)setDraft(null)}).catch(()=>setDraft(null));
+ };
+ const move=(code,step)=>change(order.indexOf(code),order.indexOf(code)+step);
+ const dropOn=code=>{if(drag&&drag!==code)change(order.indexOf(drag),order.indexOf(code));setDrag(null)};
+ return <Box title="ارزها و اولویت نمایش" aside={canEdit&&<button className="button small" disabled={busy||!online} onClick={onRefresh}><RefreshCw size={15}/> دریافت نرخ جدید</button>}>
+  <div className="currency-toolbar currency-order-toolbar"><input aria-label="جست‌وجوی ارز" value={search} onChange={e=>setSearch(e.target.value)} placeholder="جست‌وجوی نام یا نماد ارز"/><Notice>ترتیب ارزها برای حساب شما ذخیره می‌شود و دقیقاً در نوار نرخ‌های بالای داشبورد اعمال خواهد شد. برای جابه‌جایی از پیکان‌ها یا کشیدن ردیف استفاده کنید.</Notice></div>
+  <div className="currency-list currency-sort-list">{rows.map(c=>{const i=order.indexOf(c.code);return <div className={`currency-item currency-sort-item ${drag===c.code?'dragging':''}`} key={c.code} draggable={!busy&&!search} onDragStart={e=>{if(busy||search)return;e.dataTransfer.effectAllowed='move';e.dataTransfer.setData('text/plain',c.code);setDrag(c.code)}} onDragOver={e=>{if(drag){e.preventDefault();e.dataTransfer.dropEffect='move'}}} onDrop={e=>{e.preventDefault();dropOn(c.code)}} onDragEnd={()=>setDrag(null)}>
+   <span className="currency-grab" title="جابه‌جایی با کشیدن"><GripVertical size={18}/></span>
+   <span className="currency-priority" title={`اولویت ${i+1}`}>{format.format(i+1)}</span>
+   <span className="currency-icon currency-icon-image">{['USD','EUR','USDT','BTC','ETH','AED','TRY','GBP','CAD','AFN','CNY','GOLD18','GOLD24'].includes(c.code)?<img src={'/currency-icons/'+c.code+'.svg'} alt="" loading="lazy"/>:c.symbol}</span>
+   <div className="grow"><strong>{c.name}</strong><small>{c.code} · {c.unit} · {rates[c.code]?.price?formatMoney(rates[c.code].price):'نرخ ثبت نشده'}</small></div>
+   <div className="currency-sort-actions"><button type="button" title="افزایش اولویت" aria-label={`بالا بردن ${c.name}`} disabled={busy||!!search||i===0} onClick={()=>move(c.code,-1)}><ArrowUp size={16}/></button><button type="button" title="کاهش اولویت" aria-label={`پایین بردن ${c.name}`} disabled={busy||!!search||i===order.length-1} onClick={()=>move(c.code,1)}><ArrowDown size={16}/></button></div>
+   <label className="currency-visible"><input type="checkbox" checked={c.is_visible!==false} disabled={busy||c.code==='TOMAN'} onChange={e=>onToggle(c.code,e.target.checked)}/><span>نمایش</span></label>
+   {canEdit&&<div className="currency-edit-actions"><button className="icon-button" aria-label={`ویرایش ${c.name}`} onClick={()=>onEdit(c)}><Pencil size={16}/></button>{!c.is_default&&<button className="icon-button danger" aria-label={`حذف ${c.name}`} onClick={()=>onRemove(c)}><Trash2 size={16}/></button>}</div>}
+  </div>})}</div>
+  {!rows.length&&<Notice>ارزی مطابق جست‌وجو پیدا نشد.</Notice>}
+  <Notice>جابجایی با پیکان‌ها روی موبایل و صفحه‌کلید نیز قابل استفاده است. برای جلوگیری از جابه‌جایی اشتباه، هنگام جست‌وجو مرتب‌سازی غیرفعال است.</Notice>
+ </Box>;
 }
 export function ClassesPage({data,onAdd,onEdit,onRemove,onChapter,onTopic,onResource,onTask,onCheck,search,setSearch}){
  const [chosen,setChosen]=useState(null),[expanded,setExpanded]=useState('');

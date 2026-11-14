@@ -1,4 +1,4 @@
-> **v6.6:** a new mobile/desktop finance dashboard layout; bilingual interface, themes and currency settings are preserved. See `CHANGELOG-v6.6-fa.md`.
+> **v6.7:** a new mobile/desktop finance dashboard layout; bilingual interface, themes and currency settings are preserved. See `CHANGELOG-v6.7-fa.md`.
 
 > **v6.5:** refined mobile-first UI, Persian/English interface, light/dark modes and five display currencies. See `CHANGELOG-v6.5-fa.md`.
 

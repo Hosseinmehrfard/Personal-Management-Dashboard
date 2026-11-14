@@ -11,6 +11,7 @@ import {DEFAULT_ARZDIGITAL,validateArzdigitalConfig} from './arzdigital.js';
 import {validateRateSource,validateNerkharaId} from './nerkhara.js';
 import {agentAllowedHost,pinnedRequest,validateMetrics,safeDocHost} from './outbound.js';
 import {registerSharedRoutes} from './shared.js';
+import {validateCurrencyOrder} from './currency-order.js';
 
 const app=express();
 app.disable('x-powered-by');
@@ -132,7 +133,7 @@ async function dashboard(userId){
  const keys=OWNED_TABLES;
  const results=await Promise.all(keys.map(k=>query(`SELECT * FROM "${k}" WHERE user_id=$1 ORDER BY ${k==='activities'?'at DESC':k==='classes'?'title':k==='chapters'?'code':k==='transactions'?'date DESC':'created_at DESC'} ${k==='activities'?'LIMIT 100':''}`,[userId])));
  const data=Object.fromEntries(keys.map((k,i)=>[k,results[i].rows]));
- const currencies=await query(`SELECT c.*,COALESCE(p.visible,true) AS is_visible FROM currencies c LEFT JOIN user_currency_preferences p ON p.code=c.code AND p.user_id=$1 ORDER BY c.code`,[userId]);
+ const currencies=await query(`SELECT c.*,COALESCE(p.visible,true) AS is_visible, COALESCE(p.sort_order,1000) AS sort_order FROM currencies c LEFT JOIN user_currency_preferences p ON p.code=c.code AND p.user_id=$1 ORDER BY COALESCE(p.sort_order,1000),c.code`,[userId]);
  return {...data,currencies:currencies.rows,...await rateSnapshot()};
 }
 app.get('/health',wrap(async(req,res)=>{await query('SELECT 1');res.json({ok:true})}));
@@ -271,8 +272,21 @@ app.put('/api/admin/users/:id',wrap(async(req,res)=>{
   await logActivity(c,'تغییر وضعیت دسترسی کاربر','security',req.session.user_id);
  });res.json({ok:true});
 }));
+// Authenticated, user-scoped reorder: one atomic update and no cross-user writes.
+app.put('/api/currencies/order',wrap(async(req,res)=>{
+ const codes=req.body?.codes;
+ await tx(async c=>{
+  const available=(await c.query('SELECT code FROM currencies ORDER BY code')).rows.map(r=>r.code);
+  const ordered=validateCurrencyOrder(codes,available);
+  await c.query(`INSERT INTO user_currency_preferences(user_id,code,sort_order)
+   SELECT $1, item.code, item.ordinality::integer - 1
+   FROM unnest($2::text[]) WITH ORDINALITY AS item(code,ordinality)
+   ON CONFLICT(user_id,code) DO UPDATE SET sort_order=EXCLUDED.sort_order`,[req.session.user_id,ordered]);
+ });
+ res.json({ok:true});
+}));
 app.put('/api/currencies/:code/visibility',wrap(async(req,res)=>{
- const code=val(req.params.code,12,true).toUpperCase();if(typeof req.body?.visible!=='boolean')fail('وضعیت نمایش نامعتبر است');
+ const code=val(req.params.code,12,true).toUpperCase();if(!/^[A-Z0-9_]{1,12}$/.test(code))fail('نماد ارز نامعتبر است');if(typeof req.body?.visible!=='boolean')fail('وضعیت نمایش نامعتبر است');
  if(!(await query('SELECT 1 FROM currencies WHERE code=$1',[code])).rowCount)fail('ارز پیدا نشد',404);
  if(code==='TOMAN'&&!req.body.visible)fail('تومان باید همیشه قابل انتخاب باشد');
  await query(`INSERT INTO user_currency_preferences(user_id,code,visible) VALUES($1,$2,$3) ON CONFLICT(user_id,code) DO UPDATE SET visible=EXCLUDED.visible`,[req.session.user_id,code,req.body.visible]);
@@ -392,6 +406,18 @@ app.post('/api/import/legacy',wrap(async(req,res)=>{requireAdmin(req);
   }
   for(const currency of (old.currencies||[]).filter(x=>x.is_default)){
    await putRecord(c,'currencies',val(currency.code,12).toUpperCase(),currency,req.session.user_id);
+  }
+  // Restore this account's display preferences from backups made by v6.7 and newer.
+  if(Array.isArray(old.currencies)){
+   const seen=new Set();
+   for(const [i,currency] of old.currencies.entries()){
+    const code=val(currency.code,12).toUpperCase();
+    if(!/^[A-Z0-9_]{1,12}$/.test(code)||seen.has(code))continue;
+    seen.add(code);
+    await c.query(`INSERT INTO user_currency_preferences(user_id,code,visible,sort_order)
+     SELECT $1,code,$3,$4 FROM currencies WHERE code=$2
+     ON CONFLICT(user_id,code) DO UPDATE SET visible=EXCLUDED.visible,sort_order=EXCLUDED.sort_order`,[req.session.user_id,code,currency.is_visible!==false,i]);
+   }
   }
   const manual={USD:settings.manualUSD,EUR:settings.manualEUR,USDT:settings.manualUSDT,GOLD18:settings.manualGOLD18,GOLD24:settings.manualGOLD24,...settings.extraRates};
   for(const [code,price] of Object.entries(manual))if(price!==null&&price!==undefined&&Number(price)>0)await c.query('UPDATE currencies SET manual_toman=$1 WHERE code=$2',[Number(price),code]);

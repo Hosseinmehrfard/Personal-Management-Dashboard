@@ -133,6 +133,16 @@ export async function migrate(){
     updated_at timestamptz NOT NULL DEFAULT now()
   )`);
   await c.query('INSERT INTO schema_migrations(version) VALUES(8) ON CONFLICT DO NOTHING');
+  // v6.7: stable ordering belongs to each user, not the global currency catalogue.
+  await c.query(`ALTER TABLE user_currency_preferences ADD COLUMN IF NOT EXISTS sort_order integer NOT NULL DEFAULT 1000 CHECK(sort_order >= 0 AND sort_order <= 100000)`);
+  await c.query('CREATE INDEX IF NOT EXISTS idx_user_currency_sort ON user_currency_preferences(user_id,sort_order,code)');
+  // Composite owner/date indexes support month views and due-date searches.
+  await c.query('CREATE INDEX IF NOT EXISTS idx_transactions_owner_date ON transactions(user_id,date DESC)');
+  await c.query('CREATE INDEX IF NOT EXISTS idx_tasks_owner_due_status ON tasks(user_id,due_date,status)');
+  await c.query('CREATE INDEX IF NOT EXISTS idx_checks_owner_due_status ON finance_checks(user_id,due_date,status)');
+  await c.query('CREATE INDEX IF NOT EXISTS idx_balances_owner_due ON personal_balances(user_id,due_date)');
+  await c.query('CREATE INDEX IF NOT EXISTS idx_transfers_owner_date ON account_transfers(user_id,date DESC)');
+  await c.query('INSERT INTO schema_migrations(version) VALUES(9) ON CONFLICT DO NOTHING');
 
   const initialOwner=(await c.query(`SELECT id FROM users WHERE role='admin' ORDER BY created_at LIMIT 1`)).rows[0]?.id;
   if(initialOwner)await claimLegacy(c,initialOwner);
